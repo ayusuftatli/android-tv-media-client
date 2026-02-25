@@ -93,7 +93,16 @@ fun PlayerScreen(
                     }
                 }
 
-                LaunchedEffect(uiState.streamUrl, uiState.selectedSubtitleLang, uiState.subtitlesEnabled) {
+                LaunchedEffect(uiState.selectedSubtitleLang, uiState.subtitlesEnabled) {
+                    val trackSelectionParameters = exoPlayer.trackSelectionParameters
+                        .buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !uiState.subtitlesEnabled)
+                        .setPreferredTextLanguage(uiState.selectedSubtitleLang)
+                        .build()
+                    exoPlayer.trackSelectionParameters = trackSelectionParameters
+                }
+
+                LaunchedEffect(uiState.streamUrl, uiState.subtitles) {
                     val subtitleConfigs = uiState.subtitles.map { subtitle ->
                         MediaItem.SubtitleConfiguration.Builder(Uri.parse(subtitle.url))
                             .setMimeType(inferSubtitleMimeType(subtitle.url))
@@ -108,13 +117,6 @@ fun PlayerScreen(
                             )
                             .build()
                     }
-
-                    val trackSelectionParameters = exoPlayer.trackSelectionParameters
-                        .buildUpon()
-                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !uiState.subtitlesEnabled)
-                        .setPreferredTextLanguage(uiState.selectedSubtitleLang)
-                        .build()
-                    exoPlayer.trackSelectionParameters = trackSelectionParameters
 
                     val mediaItem = MediaItem.Builder()
                         .setUri(uiState.streamUrl)

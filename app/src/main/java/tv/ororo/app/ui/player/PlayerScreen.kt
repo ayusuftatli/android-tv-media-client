@@ -280,7 +280,10 @@ private fun handlePlayerKeyDown(
         }
     }
 
-    if (keyCode in playPauseToggleKeys) {
+    if (
+        keyCode in playPauseToggleKeys ||
+        (keyCode in playPauseWhenControllerHiddenKeys && !playerView.isControllerFullyVisible)
+    ) {
         if (exoPlayer.isPlaying) {
             exoPlayer.pause()
         } else {
@@ -393,8 +396,11 @@ private val controlKeys = setOf(
 )
 
 private val playPauseToggleKeys = setOf(
+    KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+)
+
+private val playPauseWhenControllerHiddenKeys = setOf(
     KeyEvent.KEYCODE_DPAD_CENTER,
     KeyEvent.KEYCODE_ENTER,
-    KeyEvent.KEYCODE_SPACE,
-    KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+    KeyEvent.KEYCODE_SPACE
 )

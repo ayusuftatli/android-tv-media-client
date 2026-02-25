@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import tv.ororo.app.data.api.HttpStatusException
 import tv.ororo.app.data.repository.OroroRepository
 import tv.ororo.app.data.repository.SessionRepository
 import javax.inject.Inject
@@ -54,9 +55,9 @@ class LoginViewModel @Inject constructor(
             } catch (e: Exception) {
                 sessionRepository.clearSession()
                 ororoRepository.clearCache()
-                val errorMsg = when {
-                    e.message?.contains("401") == true -> "Invalid email or password"
-                    e.message?.contains("402") == true -> "Free limit reached. Subscription required."
+                val errorMsg = when ((e as? HttpStatusException)?.code) {
+                    401 -> "Invalid email or password"
+                    402 -> "Free limit reached. Subscription required."
                     else -> "Login failed. Check your connection."
                 }
                 _uiState.value = _uiState.value.copy(isLoading = false, error = errorMsg)

@@ -8,9 +8,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import tv.ororo.app.data.api.HttpStatusException
+import tv.ororo.app.data.auth.AuthEvent
+import tv.ororo.app.data.auth.AuthEventBus
 import tv.ororo.app.data.domain.model.Episode
 import tv.ororo.app.data.domain.model.ShowDetail
 import tv.ororo.app.data.repository.OroroRepository
+import tv.ororo.app.data.repository.SessionRepository
 import javax.inject.Inject
 
 data class ShowDetailUiState(
@@ -24,7 +28,9 @@ data class ShowDetailUiState(
 @HiltViewModel
 class ShowDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
-    private val repository: OroroRepository
+    private val repository: OroroRepository,
+    private val sessionRepository: SessionRepository,
+    private val authEventBus: AuthEventBus
 ) : ViewModel() {
 
     private val showId: Int = savedStateHandle["showId"] ?: 0
@@ -50,9 +56,15 @@ class ShowDetailViewModel @Inject constructor(
                         .sortedBy { it.number }
                 )
             } catch (e: Exception) {
-                val errorMsg = when {
-                    e.message?.contains("401") == true -> "Session expired. Please log in again."
-                    e.message?.contains("402") == true -> "Subscription required."
+                val httpCode = (e as? HttpStatusException)?.code
+                if (httpCode == 401) {
+                    sessionRepository.clearSession()
+                    repository.clearCache()
+                    authEventBus.send(AuthEvent.SessionExpired)
+                    return@launch
+                }
+                val errorMsg = when (httpCode) {
+                    402 -> "Subscription required."
                     else -> "Failed to load show details."
                 }
                 _uiState.value = ShowDetailUiState(error = errorMsg)

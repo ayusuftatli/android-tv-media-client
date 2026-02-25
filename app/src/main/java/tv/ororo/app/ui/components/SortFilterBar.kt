@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 
 enum class SortOption(val label: String) {
     TITLE("Title"),
+    ADDED("Added"),
     YEAR("Year"),
     RATING("Rating")
 }

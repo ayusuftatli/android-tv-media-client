@@ -75,6 +75,7 @@ class ShowBrowseViewModel @Inject constructor(
 
         filtered = when (state.currentSort) {
             SortOption.TITLE -> filtered.sortedBy { it.name.lowercase() }
+            SortOption.ADDED -> filtered.sortedByDescending { it.newestVideo ?: "" }
             SortOption.YEAR -> filtered.sortedByDescending { it.year ?: 0 }
             SortOption.RATING -> filtered.sortedByDescending { it.imdbRating ?: 0.0 }
         }

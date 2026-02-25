@@ -11,6 +11,7 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import tv.ororo.app.data.api.AuthInterceptor
+import tv.ororo.app.data.api.HttpStatusInterceptor
 import tv.ororo.app.data.api.OroroApi
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
@@ -31,9 +32,13 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideOkHttpClient(authInterceptor: AuthInterceptor): OkHttpClient {
+    fun provideOkHttpClient(
+        authInterceptor: AuthInterceptor,
+        httpStatusInterceptor: HttpStatusInterceptor
+    ): OkHttpClient {
         return OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
+            .addInterceptor(httpStatusInterceptor)
             .addInterceptor(HttpLoggingInterceptor().apply {
                 level = HttpLoggingInterceptor.Level.BASIC
             })

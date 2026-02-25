@@ -5,10 +5,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -27,6 +31,13 @@ fun ShowBrowseScreen(
     viewModel: ShowBrowseViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(uiState.isLoading) {
+        if (!uiState.isLoading && uiState.filteredShows.isNotEmpty()) {
+            try { focusRequester.requestFocus() } catch (_: Exception) {}
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -93,7 +104,8 @@ fun ShowBrowseScreen(
                     columns = TvGridCells.Adaptive(170.dp),
                     contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.focusRequester(focusRequester)
                 ) {
                     items(uiState.filteredShows, key = { it.id }) { show ->
                         ContentCard(

@@ -5,11 +5,18 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.onKeyEvent
+import android.util.Log
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -27,11 +34,30 @@ fun MovieBrowseScreen(
     viewModel: MovieBrowseViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val focusRequester = remember { FocusRequester() }
+
+    Log.d("MovieBrowse", "Compose: isLoading=${uiState.isLoading}, movies=${uiState.filteredMovies.size}, error=${uiState.error}")
+
+    LaunchedEffect(uiState.isLoading) {
+        Log.d("MovieBrowse", "LaunchedEffect: isLoading=${uiState.isLoading}, movies=${uiState.filteredMovies.size}")
+        if (!uiState.isLoading && uiState.filteredMovies.isNotEmpty()) {
+            try {
+                focusRequester.requestFocus()
+                Log.d("MovieBrowse", "Focus requested successfully")
+            } catch (e: Exception) {
+                Log.e("MovieBrowse", "Focus request failed: ${e.message}")
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF1a1a2e))
+            .onKeyEvent { keyEvent ->
+                Log.d("MovieBrowse", "Key event: $keyEvent")
+                false
+            }
     ) {
         // Header
         Row(
@@ -97,7 +123,12 @@ fun MovieBrowseScreen(
                     columns = TvGridCells.Adaptive(170.dp),
                     contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier
+                        .focusRequester(focusRequester)
+                        .onFocusChanged { focusState ->
+                            Log.d("MovieBrowse", "Grid focus changed: $focusState")
+                        }
                 ) {
                     items(uiState.filteredMovies, key = { it.id }) { movie ->
                         ContentCard(

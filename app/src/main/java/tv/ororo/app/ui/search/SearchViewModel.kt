@@ -16,7 +16,8 @@ data class SearchUiState(
     val query: String = "",
     val movieResults: List<Movie> = emptyList(),
     val showResults: List<Show> = emptyList(),
-    val isLoading: Boolean = false
+    val isLoading: Boolean = false,
+    val error: String? = null
 )
 
 @HiltViewModel
@@ -36,13 +37,22 @@ class SearchViewModel @Inject constructor(
 
     private fun loadData() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
                 allMovies = repository.getMovies()
                 allShows = repository.getShows()
-            } catch (_: Exception) { }
-            _uiState.value = _uiState.value.copy(isLoading = false)
+                _uiState.value = _uiState.value.copy(isLoading = false)
+            } catch (_: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Failed to load data. Please try again."
+                )
+            }
         }
+    }
+
+    fun retry() {
+        loadData()
     }
 
     fun onQueryChanged(query: String) {

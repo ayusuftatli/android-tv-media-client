@@ -6,10 +6,14 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -28,6 +32,11 @@ fun SearchScreen(
     viewModel: SearchViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val searchFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        try { searchFocusRequester.requestFocus() } catch (_: Exception) {}
+    }
 
     Column(
         modifier = Modifier
@@ -54,6 +63,7 @@ fun SearchScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(24.dp)
+                .focusRequester(searchFocusRequester)
         )
 
         if (uiState.isLoading) {
@@ -62,6 +72,28 @@ fun SearchScreen(
                 contentAlignment = Alignment.Center
             ) {
                 CircularProgressIndicator(color = Color(0xFF6C63FF))
+            }
+            return
+        }
+
+        if (uiState.error != null) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = uiState.error!!,
+                    color = Color(0xFFFF6B6B),
+                    fontSize = 16.sp
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                    onClick = { viewModel.retry() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6C63FF))
+                ) {
+                    Text("Retry", color = Color.White)
+                }
             }
             return
         }

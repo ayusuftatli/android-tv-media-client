@@ -7,8 +7,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import tv.ororo.app.data.api.HttpStatusException
+import tv.ororo.app.data.auth.AuthEvent
+import tv.ororo.app.data.auth.AuthEventBus
 import tv.ororo.app.data.domain.model.Subtitle
 import tv.ororo.app.data.repository.OroroRepository
+import tv.ororo.app.data.repository.SessionRepository
 import javax.inject.Inject
 
 data class PlayerUiState(
@@ -22,7 +26,9 @@ data class PlayerUiState(
 
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
-    private val repository: OroroRepository
+    private val repository: OroroRepository,
+    private val sessionRepository: SessionRepository,
+    private val authEventBus: AuthEventBus
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PlayerUiState())
@@ -58,8 +64,15 @@ class PlayerViewModel @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
-                val errorMsg = when {
-                    e.message?.contains("402") == true -> "Subscription required for playback."
+                val httpCode = (e as? HttpStatusException)?.code
+                if (httpCode == 401) {
+                    sessionRepository.clearSession()
+                    repository.clearCache()
+                    authEventBus.send(AuthEvent.SessionExpired)
+                    return@launch
+                }
+                val errorMsg = when (httpCode) {
+                    402 -> "Subscription required for playback."
                     else -> "Failed to load stream."
                 }
                 _uiState.value = PlayerUiState(error = errorMsg)

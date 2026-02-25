@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
+import android.util.Log
 import kotlinx.coroutines.launch
 
 @Composable
@@ -31,6 +32,8 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val scope = rememberCoroutineScope()
+
+    Log.d("HomeScreen", "HomeScreen composed")
 
     Box(
         modifier = Modifier

@@ -7,11 +7,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -86,7 +82,6 @@ fun PlayerScreen(
                     ExoPlayer.Builder(context).build()
                 }
                 var playerViewRef by remember { mutableStateOf<PlayerView?>(null) }
-                var subtitleMenuExpanded by remember { mutableStateOf(false) }
 
                 BackHandler {
                     val playerView = playerViewRef
@@ -198,6 +193,7 @@ fun PlayerScreen(
                             PlayerView(ctx).apply {
                                 player = exoPlayer
                                 useController = true
+                                setShowSubtitleButton(true)
                                 isFocusable = true
                                 isFocusableInTouchMode = true
                                 controllerAutoShow = true
@@ -246,45 +242,6 @@ fun PlayerScreen(
                                 handled
                             }
                     )
-
-                    if (uiState.subtitles.isNotEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(16.dp)
-                        ) {
-                            Button(onClick = { subtitleMenuExpanded = true }) {
-                                Text(
-                                    text = if (uiState.subtitlesEnabled && uiState.selectedSubtitleLang != null) {
-                                        "Subtitles: ${uiState.selectedSubtitleLang}"
-                                    } else {
-                                        "Subtitles: Off"
-                                    }
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = subtitleMenuExpanded,
-                                onDismissRequest = { subtitleMenuExpanded = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Off") },
-                                    onClick = {
-                                        viewModel.setSubtitleSelection(null)
-                                        subtitleMenuExpanded = false
-                                    }
-                                )
-                                uiState.subtitles.forEach { subtitle ->
-                                    DropdownMenuItem(
-                                        text = { Text(subtitle.lang) },
-                                        onClick = {
-                                            viewModel.setSubtitleSelection(subtitle.lang)
-                                            subtitleMenuExpanded = false
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
                 }
             }
         }

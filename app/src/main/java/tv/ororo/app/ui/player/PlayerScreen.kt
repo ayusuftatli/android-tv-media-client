@@ -280,6 +280,38 @@ private fun handlePlayerKeyDown(
         }
     }
 
+    if (keyCode in playPauseToggleKeys) {
+        if (exoPlayer.isPlaying) {
+            exoPlayer.pause()
+        } else {
+            exoPlayer.play()
+        }
+        if (!playerView.isControllerFullyVisible) {
+            playerView.showController()
+        }
+        playerView.requestFocus()
+        playerView.findViewById<View>(androidx.media3.ui.R.id.exo_play_pause)?.requestFocus()
+        return true
+    }
+
+    if (keyCode == KeyEvent.KEYCODE_MEDIA_PLAY) {
+        if (!exoPlayer.isPlaying) exoPlayer.play()
+        if (!playerView.isControllerFullyVisible) {
+            playerView.showController()
+        }
+        playerView.requestFocus()
+        return true
+    }
+
+    if (keyCode == KeyEvent.KEYCODE_MEDIA_PAUSE) {
+        if (exoPlayer.isPlaying) exoPlayer.pause()
+        if (!playerView.isControllerFullyVisible) {
+            playerView.showController()
+        }
+        playerView.requestFocus()
+        return true
+    }
+
     if (keyCode !in controlKeys) return false
 
     if (!playerView.isControllerFullyVisible) {
@@ -358,4 +390,11 @@ private val controlKeys = setOf(
     KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
     KeyEvent.KEYCODE_MEDIA_PLAY,
     KeyEvent.KEYCODE_MEDIA_PAUSE
+)
+
+private val playPauseToggleKeys = setOf(
+    KeyEvent.KEYCODE_DPAD_CENTER,
+    KeyEvent.KEYCODE_ENTER,
+    KeyEvent.KEYCODE_SPACE,
+    KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
 )

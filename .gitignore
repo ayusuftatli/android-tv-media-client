@@ -5,6 +5,7 @@
 .DS_Store
 /build
 app/build/
+/app/build/intermediates/merged_res_blame_folder/
 /captures
 .externalNativeBuild
 .cxx

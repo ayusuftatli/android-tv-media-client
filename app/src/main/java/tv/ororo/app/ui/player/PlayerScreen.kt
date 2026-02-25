@@ -39,6 +39,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.DefaultTimeBar
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
 
@@ -205,17 +206,28 @@ fun PlayerScreen(
                                 post { requestFocus() }
                                 setOnKeyListener { view, keyCode, event ->
                                     if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
-                                    handlePlayerKeyDown(
+                                    val handled = handlePlayerKeyDown(
                                         keyCode = keyCode,
                                         exoPlayer = exoPlayer,
                                         playerView = view as PlayerView,
                                         onBack = onBack
                                     )
+                                    updateProgressBarSelectionState(view as PlayerView)
+                                    handled
+                                }
+                                post {
+                                    val progressBar = findViewById<View>(androidx.media3.ui.R.id.exo_progress)
+                                    progressBar?.onFocusChangeListener =
+                                        View.OnFocusChangeListener { _, _ ->
+                                            updateProgressBarSelectionState(this)
+                                        }
+                                    updateProgressBarSelectionState(this)
                                 }
                             }
                         },
                         update = { playerView ->
                             playerViewRef = playerView
+                            updateProgressBarSelectionState(playerView)
                         },
                         modifier = Modifier
                             .fillMaxSize()
@@ -224,12 +236,14 @@ fun PlayerScreen(
                                 val nativeEvent = keyEvent.nativeKeyEvent
                                 if (nativeEvent.action != KeyEvent.ACTION_DOWN) return@onPreviewKeyEvent false
                                 val playerView = playerViewRef ?: return@onPreviewKeyEvent false
-                                handlePlayerKeyDown(
+                                val handled = handlePlayerKeyDown(
                                     keyCode = nativeEvent.keyCode,
                                     exoPlayer = exoPlayer,
                                     playerView = playerView,
                                     onBack = onBack
                                 )
+                                updateProgressBarSelectionState(playerView)
+                                handled
                             }
                     )
 
@@ -285,13 +299,17 @@ private fun handlePlayerKeyDown(
 ): Boolean {
     when (keyCode) {
         KeyEvent.KEYCODE_DPAD_LEFT -> {
-            exoPlayer.seekBack()
-            return true
+            if (isProgressBarFocused(playerView)) {
+                exoPlayer.seekBack()
+                return true
+            }
         }
 
         KeyEvent.KEYCODE_DPAD_RIGHT -> {
-            exoPlayer.seekForward()
-            return true
+            if (isProgressBarFocused(playerView)) {
+                exoPlayer.seekForward()
+                return true
+            }
         }
 
         KeyEvent.KEYCODE_BACK -> {
@@ -314,6 +332,37 @@ private fun handlePlayerKeyDown(
         return true
     }
     return false
+}
+
+private fun isProgressBarFocused(playerView: PlayerView): Boolean {
+    val progressBar = playerView.findViewById<View>(androidx.media3.ui.R.id.exo_progress) ?: return false
+    val focusedView = playerView.findFocus() ?: return false
+    return isDescendantOrSame(focusedView, progressBar)
+}
+
+private fun isDescendantOrSame(view: View, potentialAncestor: View): Boolean {
+    var current: View? = view
+    while (current != null) {
+        if (current === potentialAncestor) return true
+        current = current.parent as? View
+    }
+    return false
+}
+
+private fun updateProgressBarSelectionState(playerView: PlayerView) {
+    val progressBar = playerView.findViewById<View>(androidx.media3.ui.R.id.exo_progress) ?: return
+    val isSelected = isProgressBarFocused(playerView)
+
+    progressBar.alpha = if (isSelected) 1.0f else 0.75f
+
+    val timeBar = progressBar as? DefaultTimeBar ?: return
+    if (isSelected) {
+        timeBar.setPlayedColor(0xFF22C55E.toInt())
+        timeBar.setScrubberColor(0xFF22C55E.toInt())
+    } else {
+        timeBar.setPlayedColor(0xFFFFFFFF.toInt())
+        timeBar.setScrubberColor(0xFFFFFFFF.toInt())
+    }
 }
 
 internal fun shouldHandleBackAsHideControls(isControllerVisible: Boolean): Boolean {

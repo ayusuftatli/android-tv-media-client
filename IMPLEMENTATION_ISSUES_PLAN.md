@@ -15,7 +15,7 @@ This plan covers four issues:
   - `movie:<id>`
   - `episode:<id>`
 
-## Phase 1: Fix Back Button in Player
+## Phase 1: Fix Back Button in Player --- fixed. 
 
 ### Problem
 In playback, pressing Back while controls are visible exits the screen instead of hiding controls first.
@@ -35,7 +35,7 @@ In playback, pressing Back while controls are visible exits the screen instead o
 - Back navigation occurs only when controls are already hidden.
 - Existing left/right seek and play/pause behavior still works.
 
-## Phase 2: Search Enter Key Should Dismiss Keyboard
+## Phase 2: Search Enter Key Should Dismiss Keyboard - still notworking
 
 ### Problem
 Pressing Enter/Search on the on-screen keyboard does nothing in Search view.
@@ -54,7 +54,7 @@ Pressing Enter/Search on the on-screen keyboard does nothing in Search view.
 - Pressing Enter/Search closes the virtual keyboard.
 - Query and results stay visible (no accidental navigation/reset).
 
-## Phase 3: Subtitle Behavior (Kodi-Informed)
+## Phase 3: Subtitle Behavior (Kodi-Informed) works but needs changings.
 
 ### Kodi Reference (already in repo)
 - `plugin.video.ororotv-4.0.1/default.py:188-193`: selects preferred subtitle language at playback start.
@@ -87,7 +87,7 @@ Pressing Enter/Search on the on-screen keyboard does nothing in Search view.
 - User can switch subtitle language and disable subtitles.
 - Playback does not fail when subtitles are missing or track format differs.
 
-## Phase 4: Watched Tracker for Movies and Episodes
+## Phase 4: Watched Tracker for Movies and Episodes - done
 
 ### Problem
 App has no watched-state persistence, so completed content is not identified in UI.

@@ -15,12 +15,14 @@ import tv.ororo.app.data.domain.model.Episode
 import tv.ororo.app.data.domain.model.ShowDetail
 import tv.ororo.app.data.repository.OroroRepository
 import tv.ororo.app.data.repository.SessionRepository
+import tv.ororo.app.data.repository.WatchProgressRepository
 import javax.inject.Inject
 
 data class ShowDetailUiState(
     val show: ShowDetail? = null,
     val selectedSeason: Int = 1,
     val seasonEpisodes: List<Episode> = emptyList(),
+    val watchedEpisodeIds: Set<Int> = emptySet(),
     val isLoading: Boolean = false,
     val error: String? = null
 )
@@ -30,6 +32,7 @@ class ShowDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repository: OroroRepository,
     private val sessionRepository: SessionRepository,
+    private val watchProgressRepository: WatchProgressRepository,
     private val authEventBus: AuthEventBus
 ) : ViewModel() {
 
@@ -39,7 +42,20 @@ class ShowDetailViewModel @Inject constructor(
     val uiState: StateFlow<ShowDetailUiState> = _uiState.asStateFlow()
 
     init {
+        observeWatchStates()
         loadShow()
+    }
+
+    private fun observeWatchStates() {
+        viewModelScope.launch {
+            watchProgressRepository.watchStatesFlow().collect { states ->
+                val watchedEpisodeIds = states.values
+                    .filter { it.completed && it.contentKey.startsWith("episode:") }
+                    .mapNotNull { it.contentKey.substringAfter("episode:").toIntOrNull() }
+                    .toSet()
+                _uiState.value = _uiState.value.copy(watchedEpisodeIds = watchedEpisodeIds)
+            }
+        }
     }
 
     private fun loadShow() {
@@ -53,7 +69,8 @@ class ShowDetailViewModel @Inject constructor(
                     show = show,
                     selectedSeason = firstSeason,
                     seasonEpisodes = show.episodes.filter { it.season == firstSeason }
-                        .sortedBy { it.number }
+                        .sortedBy { it.number },
+                    watchedEpisodeIds = _uiState.value.watchedEpisodeIds
                 )
             } catch (e: Exception) {
                 val httpCode = (e as? HttpStatusException)?.code

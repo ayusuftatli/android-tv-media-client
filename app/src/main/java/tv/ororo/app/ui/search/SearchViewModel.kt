@@ -10,19 +10,22 @@ import kotlinx.coroutines.launch
 import tv.ororo.app.data.domain.model.Movie
 import tv.ororo.app.data.domain.model.Show
 import tv.ororo.app.data.repository.OroroRepository
+import tv.ororo.app.data.repository.WatchProgressRepository
 import javax.inject.Inject
 
 data class SearchUiState(
     val query: String = "",
     val movieResults: List<Movie> = emptyList(),
     val showResults: List<Show> = emptyList(),
+    val watchedMovieIds: Set<Int> = emptySet(),
     val isLoading: Boolean = false,
     val error: String? = null
 )
 
 @HiltViewModel
 class SearchViewModel @Inject constructor(
-    private val repository: OroroRepository
+    private val repository: OroroRepository,
+    private val watchProgressRepository: WatchProgressRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SearchUiState())
@@ -32,7 +35,20 @@ class SearchViewModel @Inject constructor(
     private var allShows: List<Show> = emptyList()
 
     init {
+        observeWatchStates()
         loadData()
+    }
+
+    private fun observeWatchStates() {
+        viewModelScope.launch {
+            watchProgressRepository.watchStatesFlow().collect { states ->
+                val watchedMovieIds = states.values
+                    .filter { it.completed && it.contentKey.startsWith("movie:") }
+                    .mapNotNull { it.contentKey.substringAfter("movie:").toIntOrNull() }
+                    .toSet()
+                _uiState.value = _uiState.value.copy(watchedMovieIds = watchedMovieIds)
+            }
+        }
     }
 
     private fun loadData() {

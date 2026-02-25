@@ -6,6 +6,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import tv.ororo.app.data.api.HttpStatusException
 import tv.ororo.app.data.auth.AuthEvent
@@ -13,6 +14,9 @@ import tv.ororo.app.data.auth.AuthEventBus
 import tv.ororo.app.data.domain.model.Subtitle
 import tv.ororo.app.data.repository.OroroRepository
 import tv.ororo.app.data.repository.SessionRepository
+import tv.ororo.app.data.repository.SubtitlePreferencesRepository
+import tv.ororo.app.data.repository.WatchProgressRepository
+import java.util.Locale
 import javax.inject.Inject
 
 data class PlayerUiState(
@@ -20,6 +24,7 @@ data class PlayerUiState(
     val title: String = "",
     val subtitles: List<Subtitle> = emptyList(),
     val selectedSubtitleLang: String? = null,
+    val subtitlesEnabled: Boolean = true,
     val isLoading: Boolean = false,
     val error: String? = null
 )
@@ -28,6 +33,8 @@ data class PlayerUiState(
 class PlayerViewModel @Inject constructor(
     private val repository: OroroRepository,
     private val sessionRepository: SessionRepository,
+    private val subtitlePreferencesRepository: SubtitlePreferencesRepository,
+    private val watchProgressRepository: WatchProgressRepository,
     private val authEventBus: AuthEventBus
 ) : ViewModel() {
 
@@ -40,15 +47,25 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = PlayerUiState(isLoading = true)
             try {
+                val subtitlesEnabled = subtitlePreferencesRepository.subtitlesEnabled.first()
+                val preferredSubtitleLang = subtitlePreferencesRepository.preferredSubtitleLang.first()
+
                 when (type) {
                     "movie" -> {
                         val movie = repository.getMovieDetail(id)
                         _uiState.value = PlayerUiState(
                             streamUrl = movie.streamUrl,
                             title = movie.name,
-                            subtitles = movie.subtitles
+                            subtitles = movie.subtitles,
+                            selectedSubtitleLang = selectPreferredSubtitleLanguage(
+                                movie.subtitles,
+                                preferredSubtitleLang,
+                                subtitlesEnabled
+                            ),
+                            subtitlesEnabled = subtitlesEnabled
                         )
                     }
+
                     "episode" -> {
                         val episode = repository.getEpisodeDetail(id)
                         val title = if (episode.showName != null && episode.season != null && episode.number != null) {
@@ -59,7 +76,13 @@ class PlayerViewModel @Inject constructor(
                         _uiState.value = PlayerUiState(
                             streamUrl = episode.streamUrl,
                             title = title,
-                            subtitles = episode.subtitles
+                            subtitles = episode.subtitles,
+                            selectedSubtitleLang = selectPreferredSubtitleLanguage(
+                                episode.subtitles,
+                                preferredSubtitleLang,
+                                subtitlesEnabled
+                            ),
+                            subtitlesEnabled = subtitlesEnabled
                         )
                     }
                 }
@@ -80,7 +103,67 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    fun selectSubtitle(lang: String?) {
-        _uiState.value = _uiState.value.copy(selectedSubtitleLang = lang)
+    fun onSubtitleTrackChanged(selectedLanguage: String?, isTextTrackDisabled: Boolean) {
+        viewModelScope.launch {
+            if (isTextTrackDisabled) {
+                subtitlePreferencesRepository.setSubtitlesEnabled(false)
+                _uiState.value = _uiState.value.copy(
+                    subtitlesEnabled = false,
+                    selectedSubtitleLang = null
+                )
+                return@launch
+            }
+
+            val normalized = normalizeLanguage(selectedLanguage)
+            if (normalized != null) {
+                subtitlePreferencesRepository.updateSelection(normalized)
+                _uiState.value = _uiState.value.copy(
+                    subtitlesEnabled = true,
+                    selectedSubtitleLang = normalized
+                )
+            }
+        }
     }
+
+    fun setSubtitleSelection(selectedLanguage: String?) {
+        viewModelScope.launch {
+            subtitlePreferencesRepository.updateSelection(selectedLanguage)
+            _uiState.value = _uiState.value.copy(
+                subtitlesEnabled = selectedLanguage != null,
+                selectedSubtitleLang = selectedLanguage
+            )
+        }
+    }
+
+    fun onPlaybackProgress(
+        contentType: String,
+        contentId: Int,
+        positionMs: Long,
+        durationMs: Long,
+        isEnded: Boolean
+    ) {
+        viewModelScope.launch {
+            val key = WatchProgressRepository.contentKey(contentType, contentId)
+            watchProgressRepository.saveProgress(key, positionMs, durationMs, isEnded)
+        }
+    }
+}
+
+internal fun selectPreferredSubtitleLanguage(
+    subtitles: List<Subtitle>,
+    preferredLanguage: String,
+    subtitlesEnabled: Boolean
+): String? {
+    if (!subtitlesEnabled || subtitles.isEmpty()) return null
+
+    val normalizedPreferred = normalizeLanguage(preferredLanguage) ?: return subtitles.first().lang
+
+    return subtitles.firstOrNull { subtitle ->
+        normalizeLanguage(subtitle.lang) == normalizedPreferred
+    }?.lang ?: subtitles.first().lang
+}
+
+internal fun normalizeLanguage(value: String?): String? {
+    if (value.isNullOrBlank()) return null
+    return value.substringBefore('-').substringBefore('_').lowercase(Locale.US)
 }

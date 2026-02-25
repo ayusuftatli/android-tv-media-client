@@ -9,12 +9,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import tv.ororo.app.data.domain.model.Movie
 import tv.ororo.app.data.repository.OroroRepository
+import tv.ororo.app.data.repository.WatchProgressRepository
 import tv.ororo.app.ui.components.SortOption
 import javax.inject.Inject
 
 data class MovieBrowseUiState(
     val movies: List<Movie> = emptyList(),
     val filteredMovies: List<Movie> = emptyList(),
+    val watchedMovieIds: Set<Int> = emptySet(),
     val genres: List<String> = emptyList(),
     val currentSort: SortOption = SortOption.TITLE,
     val selectedGenre: String? = null,
@@ -24,14 +26,28 @@ data class MovieBrowseUiState(
 
 @HiltViewModel
 class MovieBrowseViewModel @Inject constructor(
-    private val repository: OroroRepository
+    private val repository: OroroRepository,
+    private val watchProgressRepository: WatchProgressRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MovieBrowseUiState())
     val uiState: StateFlow<MovieBrowseUiState> = _uiState.asStateFlow()
 
     init {
+        observeWatchStates()
         loadMovies()
+    }
+
+    private fun observeWatchStates() {
+        viewModelScope.launch {
+            watchProgressRepository.watchStatesFlow().collect { states ->
+                val watchedMovieIds = states.values
+                    .filter { it.completed && it.contentKey.startsWith("movie:") }
+                    .mapNotNull { it.contentKey.substringAfter("movie:").toIntOrNull() }
+                    .toSet()
+                _uiState.value = _uiState.value.copy(watchedMovieIds = watchedMovieIds)
+            }
+        }
     }
 
     private fun loadMovies() {

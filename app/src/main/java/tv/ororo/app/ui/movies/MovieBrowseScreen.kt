@@ -136,6 +136,7 @@ fun MovieBrowseScreen(
                             posterUrl = movie.posterUrl,
                             year = movie.year,
                             rating = movie.imdbRating,
+                            isWatched = uiState.watchedMovieIds.contains(movie.id),
                             onClick = { onMovieClick(movie.id) }
                         )
                     }

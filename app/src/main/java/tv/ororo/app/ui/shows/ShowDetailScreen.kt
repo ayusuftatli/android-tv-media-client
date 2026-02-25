@@ -174,6 +174,7 @@ private fun ShowDetailContent(
                     EpisodeRow(
                         episode = episode,
                         showName = show.name,
+                        isWatched = uiState.watchedEpisodeIds.contains(episode.id),
                         onClick = { onEpisodeClick(episode.id) }
                     )
                 }
@@ -186,6 +187,7 @@ private fun ShowDetailContent(
 private fun EpisodeRow(
     episode: tv.ororo.app.data.domain.model.Episode,
     showName: String,
+    isWatched: Boolean,
     onClick: () -> Unit
 ) {
     Surface(
@@ -232,6 +234,14 @@ private fun EpisodeRow(
                 Text(
                     text = episode.resolution,
                     color = Color.Gray,
+                    fontSize = 11.sp
+                )
+            }
+            if (isWatched) {
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "Watched",
+                    color = Color(0xFF77DD77),
                     fontSize = 11.sp
                 )
             }

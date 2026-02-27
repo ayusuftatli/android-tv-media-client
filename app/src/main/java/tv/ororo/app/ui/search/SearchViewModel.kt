@@ -3,9 +3,13 @@ package tv.ororo.app.ui.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import tv.ororo.app.data.domain.model.Movie
 import tv.ororo.app.data.domain.model.Show
@@ -30,12 +34,14 @@ class SearchViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
+    private val queryFlow = MutableStateFlow("")
 
     private var allMovies: List<Movie> = emptyList()
     private var allShows: List<Show> = emptyList()
 
     init {
         observeWatchStates()
+        observeQueryChanges()
         loadData()
     }
 
@@ -58,6 +64,7 @@ class SearchViewModel @Inject constructor(
                 allMovies = repository.getMovies()
                 allShows = repository.getShows()
                 _uiState.value = _uiState.value.copy(isLoading = false)
+                applyQuery(_uiState.value.query)
             } catch (_: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
@@ -67,12 +74,28 @@ class SearchViewModel @Inject constructor(
         }
     }
 
+    @OptIn(FlowPreview::class)
+    private fun observeQueryChanges() {
+        viewModelScope.launch {
+            queryFlow
+                .debounce(300L)
+                .distinctUntilChanged()
+                .collectLatest { query ->
+                    applyQuery(query)
+                }
+        }
+    }
+
     fun retry() {
         loadData()
     }
 
     fun onQueryChanged(query: String) {
         _uiState.value = _uiState.value.copy(query = query)
+        queryFlow.value = query
+    }
+
+    private fun applyQuery(query: String) {
         if (query.length < 2) {
             _uiState.value = _uiState.value.copy(
                 movieResults = emptyList(),
@@ -80,7 +103,6 @@ class SearchViewModel @Inject constructor(
             )
             return
         }
-
         val terms = query.lowercase().split(" ").filter { it.isNotBlank() }
         val movies = allMovies.filter { movie ->
             terms.all { term -> movie.name.lowercase().contains(term) }

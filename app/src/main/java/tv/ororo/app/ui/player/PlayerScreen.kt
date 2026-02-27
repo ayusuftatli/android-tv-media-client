@@ -125,6 +125,9 @@ fun PlayerScreen(
 
                     exoPlayer.setMediaItem(mediaItem)
                     exoPlayer.prepare()
+                    if (uiState.resumePositionMs > 0L) {
+                        exoPlayer.seekTo(uiState.resumePositionMs)
+                    }
                     exoPlayer.playWhenReady = true
                 }
 

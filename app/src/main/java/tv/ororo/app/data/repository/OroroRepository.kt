@@ -11,12 +11,17 @@ class OroroRepository @Inject constructor(
     private val api: OroroApi
 ) {
     private var moviesCache: List<Movie>? = null
+    private var moviesCacheTimestampMs: Long? = null
     private var showsCache: List<Show>? = null
+    private var showsCacheTimestampMs: Long? = null
 
     suspend fun getMovies(forceRefresh: Boolean = false): List<Movie> {
-        if (!forceRefresh && moviesCache != null) return moviesCache!!
+        if (!forceRefresh && moviesCache != null && isCacheFresh(moviesCacheTimestampMs)) {
+            return moviesCache!!
+        }
         val movies = api.getMovies().movies.map { it.toDomain() }
         moviesCache = movies
+        moviesCacheTimestampMs = System.currentTimeMillis()
         return movies
     }
 
@@ -25,9 +30,12 @@ class OroroRepository @Inject constructor(
     }
 
     suspend fun getShows(forceRefresh: Boolean = false): List<Show> {
-        if (!forceRefresh && showsCache != null) return showsCache!!
+        if (!forceRefresh && showsCache != null && isCacheFresh(showsCacheTimestampMs)) {
+            return showsCache!!
+        }
         val shows = api.getShows().shows.map { it.toDomain() }
         showsCache = shows
+        showsCacheTimestampMs = System.currentTimeMillis()
         return shows
     }
 
@@ -41,6 +49,18 @@ class OroroRepository @Inject constructor(
 
     fun clearCache() {
         moviesCache = null
+        moviesCacheTimestampMs = null
         showsCache = null
+        showsCacheTimestampMs = null
+    }
+
+    private fun isCacheFresh(cachedAtMs: Long?): Boolean {
+        if (cachedAtMs == null) return false
+        val ageMs = System.currentTimeMillis() - cachedAtMs
+        return ageMs in 0..CACHE_TTL_MS
+    }
+
+    companion object {
+        private const val CACHE_TTL_MS = 15 * 60 * 1000L
     }
 }

@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -42,6 +43,22 @@ class WatchProgressRepository @Inject constructor(
                 parseWatchState(raw)
             }.associateBy { it.contentKey }
         }
+    }
+
+    fun inProgressWatchStatesFlow(): Flow<List<WatchState>> {
+        return watchStatesFlow().map { states ->
+            states.values
+                .filter { state ->
+                    !state.completed && state.positionMs > 0L && state.durationMs > 0L
+                }
+                .sortedByDescending { it.updatedAt }
+        }
+    }
+
+    suspend fun getWatchState(contentKey: String): WatchState? {
+        val key = stringPreferencesKey(keyPrefix + contentKey)
+        val raw = context.watchProgressDataStore.data.first()[key] ?: return null
+        return parseWatchState(raw)
     }
 
     suspend fun saveProgress(
@@ -81,6 +98,13 @@ class WatchProgressRepository @Inject constructor(
             if (isEnded) return true
             if (durationMs <= 0L) return false
             return positionMs.toDouble() / durationMs.toDouble() >= COMPLETION_THRESHOLD
+        }
+
+        fun parseContentKey(contentKey: String): Pair<String, Int>? {
+            val type = contentKey.substringBefore(':', missingDelimiterValue = "").trim()
+            val id = contentKey.substringAfter(':', missingDelimiterValue = "").toIntOrNull() ?: return null
+            if (type.isBlank()) return null
+            return type to id
         }
     }
 

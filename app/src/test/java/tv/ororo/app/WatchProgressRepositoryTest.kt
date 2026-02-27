@@ -42,4 +42,17 @@ class WatchProgressRepositoryTest {
             )
         )
     }
+
+    @Test
+    fun `content key parser extracts type and id`() {
+        assertEquals("movie" to 42, WatchProgressRepository.parseContentKey("movie:42"))
+        assertEquals("episode" to 9, WatchProgressRepository.parseContentKey("episode:9"))
+    }
+
+    @Test
+    fun `content key parser returns null for invalid keys`() {
+        assertEquals(null, WatchProgressRepository.parseContentKey("movie"))
+        assertEquals(null, WatchProgressRepository.parseContentKey("movie:abc"))
+        assertEquals(null, WatchProgressRepository.parseContentKey(":12"))
+    }
 }

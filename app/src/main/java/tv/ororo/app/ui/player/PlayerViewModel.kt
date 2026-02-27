@@ -23,6 +23,7 @@ data class PlayerUiState(
     val streamUrl: String? = null,
     val title: String = "",
     val subtitles: List<Subtitle> = emptyList(),
+    val resumePositionMs: Long = 0L,
     val selectedSubtitleLang: String? = null,
     val subtitlesEnabled: Boolean = true,
     val isLoading: Boolean = false,
@@ -49,6 +50,12 @@ class PlayerViewModel @Inject constructor(
             try {
                 val subtitlesEnabled = subtitlePreferencesRepository.subtitlesEnabled.first()
                 val preferredSubtitleLang = subtitlePreferencesRepository.preferredSubtitleLang.first()
+                val contentKey = WatchProgressRepository.contentKey(type, id)
+                val savedWatchState = watchProgressRepository.getWatchState(contentKey)
+                val resumePositionMs = savedWatchState
+                    ?.takeIf { !it.completed && it.positionMs > 0L }
+                    ?.positionMs
+                    ?: 0L
 
                 when (type) {
                     "movie" -> {
@@ -57,6 +64,7 @@ class PlayerViewModel @Inject constructor(
                             streamUrl = movie.streamUrl,
                             title = movie.name,
                             subtitles = movie.subtitles,
+                            resumePositionMs = resumePositionMs,
                             selectedSubtitleLang = selectPreferredSubtitleLanguage(
                                 movie.subtitles,
                                 preferredSubtitleLang,
@@ -77,6 +85,7 @@ class PlayerViewModel @Inject constructor(
                             streamUrl = episode.streamUrl,
                             title = title,
                             subtitles = episode.subtitles,
+                            resumePositionMs = resumePositionMs,
                             selectedSubtitleLang = selectPreferredSubtitleLanguage(
                                 episode.subtitles,
                                 preferredSubtitleLang,

@@ -38,6 +38,9 @@ fun AppNavHost(
                 onShowsClick = { navController.navigate(Screen.ShowBrowse.route) },
                 onSavedClick = { navController.navigate(Screen.Saved.route) },
                 onSearchClick = { navController.navigate(Screen.Search.route) },
+                onContinueWatchingClick = { type, id ->
+                    navController.navigate(Screen.Player.createRoute(type, id))
+                },
                 onLogout = {
                     navController.navigate(Screen.Login.route) {
                         popUpTo(Screen.Home.route) { inclusive = true }

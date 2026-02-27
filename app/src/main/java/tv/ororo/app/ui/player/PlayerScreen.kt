@@ -282,20 +282,25 @@ private fun handlePlayerKeyDown(
         }
     }
 
-    if (
+    val shouldTogglePlayPause =
         keyCode in playPauseToggleKeys ||
-        (keyCode in playPauseWhenControllerHiddenKeys && !playerView.isControllerFullyVisible)
-    ) {
+            (
+                keyCode in playPauseWhenControllerHiddenKeys &&
+                    (!playerView.isControllerFullyVisible || isProgressBarFocused(playerView))
+            )
+
+    if (shouldTogglePlayPause) {
+        val wasControllerVisible = playerView.isControllerFullyVisible
         if (exoPlayer.isPlaying) {
             exoPlayer.pause()
         } else {
             exoPlayer.play()
         }
-        if (!playerView.isControllerFullyVisible) {
+        if (!wasControllerVisible) {
             playerView.showController()
+            playerView.requestFocus()
+            focusDefaultControl(playerView)
         }
-        playerView.requestFocus()
-        playerView.findViewById<View>(androidx.media3.ui.R.id.exo_play_pause)?.requestFocus()
         return true
     }
 
@@ -322,10 +327,16 @@ private fun handlePlayerKeyDown(
     if (!playerView.isControllerFullyVisible) {
         playerView.showController()
         playerView.requestFocus()
-        playerView.findViewById<View>(androidx.media3.ui.R.id.exo_play_pause)?.requestFocus()
+        focusDefaultControl(playerView)
         return true
     }
     return false
+}
+
+private fun focusDefaultControl(playerView: PlayerView) {
+    val progressBar = playerView.findViewById<View>(androidx.media3.ui.R.id.exo_progress)
+    if (progressBar?.requestFocus() == true) return
+    playerView.findViewById<View>(androidx.media3.ui.R.id.exo_play_pause)?.requestFocus()
 }
 
 private fun isProgressBarFocused(playerView: PlayerView): Boolean {

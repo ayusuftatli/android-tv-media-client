@@ -3,6 +3,7 @@ package tv.ororo.app.ui.navigation
 sealed class Screen(val route: String) {
     data object Login : Screen("login")
     data object Home : Screen("home")
+    data object Saved : Screen("saved")
     data object MovieBrowse : Screen("movies")
     data object ShowBrowse : Screen("shows")
     data object MovieDetail : Screen("movie/{movieId}") {

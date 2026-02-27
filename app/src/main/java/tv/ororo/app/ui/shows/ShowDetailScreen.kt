@@ -6,6 +6,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -56,7 +58,9 @@ fun ShowDetailScreen(
             uiState.show != null -> {
                 ShowDetailContent(
                     uiState = uiState,
+                    isSaved = uiState.isSaved,
                     onSeasonSelected = viewModel::onSeasonSelected,
+                    onSaveClick = viewModel::toggleSaved,
                     onEpisodeClick = onEpisodeClick
                 )
             }
@@ -67,7 +71,9 @@ fun ShowDetailScreen(
 @Composable
 private fun ShowDetailContent(
     uiState: ShowDetailUiState,
+    isSaved: Boolean,
     onSeasonSelected: (Int) -> Unit,
+    onSaveClick: () -> Unit,
     onEpisodeClick: (Int) -> Unit
 ) {
     val show = uiState.show!!
@@ -140,6 +146,35 @@ private fun ShowDetailContent(
 
         // Right: Seasons + Episodes
         Column(modifier = Modifier.weight(1f)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
+                horizontalArrangement = Arrangement.End
+            ) {
+                Surface(
+                    onClick = onSaveClick,
+                    modifier = Modifier.height(44.dp),
+                    colors = ClickableSurfaceDefaults.colors(
+                        containerColor = if (isSaved) Color(0xFF2E7D32) else Color(0xFF3A3A50),
+                        focusedContainerColor = Color(0xFF6C63FF)
+                    ),
+                    shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(8.dp))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                            contentDescription = null
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if (isSaved) "Saved" else "Save")
+                    }
+                }
+            }
+
             // Season tabs
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),

@@ -6,6 +6,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -52,7 +54,12 @@ fun MovieDetailScreen(
             }
             uiState.movie != null -> {
                 val movie = uiState.movie!!
-                MovieDetailContent(movie = movie, onPlayClick = onPlayClick)
+                MovieDetailContent(
+                    movie = movie,
+                    isSaved = uiState.isSaved,
+                    onPlayClick = onPlayClick,
+                    onSaveClick = viewModel::toggleSaved
+                )
             }
         }
     }
@@ -61,7 +68,9 @@ fun MovieDetailScreen(
 @Composable
 private fun MovieDetailContent(
     movie: tv.ororo.app.data.domain.model.MovieDetail,
-    onPlayClick: () -> Unit
+    isSaved: Boolean,
+    onPlayClick: () -> Unit,
+    onSaveClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -119,15 +128,31 @@ private fun MovieDetailContent(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Play button
-            Button(
-                onClick = onPlayClick,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6C63FF)),
-                modifier = Modifier.height(48.dp)
-            ) {
-                Icon(Icons.Default.PlayArrow, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Play", fontSize = 16.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(
+                    onClick = onPlayClick,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6C63FF)),
+                    modifier = Modifier.height(48.dp)
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Play", fontSize = 16.sp)
+                }
+
+                Button(
+                    onClick = onSaveClick,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isSaved) Color(0xFF2E7D32) else Color(0xFF3A3A50)
+                    ),
+                    modifier = Modifier.height(48.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                        contentDescription = null
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(if (isSaved) "Saved" else "Save", fontSize = 16.sp)
+                }
             }
 
             Spacer(modifier = Modifier.height(20.dp))

@@ -4,6 +4,7 @@ Android TV application built with Kotlin and Jetpack Compose for TV, designed fo
 
 ## Features
 - TV-first UI with D-pad navigation
+- Save movies and TV shows for quick access
 - Media playback with AndroidX Media3 (ExoPlayer)
 - HLS playback support
 - Dependency injection with Hilt

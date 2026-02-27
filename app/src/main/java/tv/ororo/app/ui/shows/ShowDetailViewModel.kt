@@ -14,6 +14,7 @@ import tv.ororo.app.data.auth.AuthEventBus
 import tv.ororo.app.data.domain.model.Episode
 import tv.ororo.app.data.domain.model.ShowDetail
 import tv.ororo.app.data.repository.OroroRepository
+import tv.ororo.app.data.repository.SavedContentRepository
 import tv.ororo.app.data.repository.SessionRepository
 import tv.ororo.app.data.repository.WatchProgressRepository
 import javax.inject.Inject
@@ -23,6 +24,7 @@ data class ShowDetailUiState(
     val selectedSeason: Int = 1,
     val seasonEpisodes: List<Episode> = emptyList(),
     val watchedEpisodeIds: Set<Int> = emptySet(),
+    val isSaved: Boolean = false,
     val isLoading: Boolean = false,
     val error: String? = null
 )
@@ -32,6 +34,7 @@ class ShowDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repository: OroroRepository,
     private val sessionRepository: SessionRepository,
+    private val savedContentRepository: SavedContentRepository,
     private val watchProgressRepository: WatchProgressRepository,
     private val authEventBus: AuthEventBus
 ) : ViewModel() {
@@ -43,6 +46,7 @@ class ShowDetailViewModel @Inject constructor(
 
     init {
         observeWatchStates()
+        observeSavedState()
         loadShow()
     }
 
@@ -58,19 +62,28 @@ class ShowDetailViewModel @Inject constructor(
         }
     }
 
+    private fun observeSavedState() {
+        viewModelScope.launch {
+            savedContentRepository.isSavedFlow(SavedContentRepository.TYPE_SHOW, showId).collect { isSaved ->
+                _uiState.value = _uiState.value.copy(isSaved = isSaved)
+            }
+        }
+    }
+
     private fun loadShow() {
         viewModelScope.launch {
-            _uiState.value = ShowDetailUiState(isLoading = true)
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
                 val show = repository.getShowDetail(showId)
                 val seasons = show.episodes.map { it.season }.distinct().sorted()
                 val firstSeason = seasons.firstOrNull() ?: 1
-                _uiState.value = ShowDetailUiState(
+                _uiState.value = _uiState.value.copy(
                     show = show,
                     selectedSeason = firstSeason,
                     seasonEpisodes = show.episodes.filter { it.season == firstSeason }
                         .sortedBy { it.number },
-                    watchedEpisodeIds = _uiState.value.watchedEpisodeIds
+                    isLoading = false,
+                    error = null
                 )
             } catch (e: Exception) {
                 val httpCode = (e as? HttpStatusException)?.code
@@ -84,7 +97,12 @@ class ShowDetailViewModel @Inject constructor(
                     402 -> "Subscription required."
                     else -> "Failed to load show details."
                 }
-                _uiState.value = ShowDetailUiState(error = errorMsg)
+                _uiState.value = _uiState.value.copy(
+                    show = null,
+                    seasonEpisodes = emptyList(),
+                    isLoading = false,
+                    error = errorMsg
+                )
             }
         }
     }
@@ -96,5 +114,11 @@ class ShowDetailViewModel @Inject constructor(
             seasonEpisodes = show.episodes.filter { it.season == season }
                 .sortedBy { it.number }
         )
+    }
+
+    fun toggleSaved() {
+        viewModelScope.launch {
+            savedContentRepository.toggleSaved(SavedContentRepository.TYPE_SHOW, showId)
+        }
     }
 }

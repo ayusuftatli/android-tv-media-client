@@ -13,11 +13,13 @@ import tv.ororo.app.data.auth.AuthEvent
 import tv.ororo.app.data.auth.AuthEventBus
 import tv.ororo.app.data.domain.model.MovieDetail
 import tv.ororo.app.data.repository.OroroRepository
+import tv.ororo.app.data.repository.SavedContentRepository
 import tv.ororo.app.data.repository.SessionRepository
 import javax.inject.Inject
 
 data class MovieDetailUiState(
     val movie: MovieDetail? = null,
+    val isSaved: Boolean = false,
     val isLoading: Boolean = false,
     val error: String? = null
 )
@@ -27,6 +29,7 @@ class MovieDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repository: OroroRepository,
     private val sessionRepository: SessionRepository,
+    private val savedContentRepository: SavedContentRepository,
     private val authEventBus: AuthEventBus
 ) : ViewModel() {
 
@@ -36,15 +39,28 @@ class MovieDetailViewModel @Inject constructor(
     val uiState: StateFlow<MovieDetailUiState> = _uiState.asStateFlow()
 
     init {
+        observeSavedState()
         loadMovie()
+    }
+
+    private fun observeSavedState() {
+        viewModelScope.launch {
+            savedContentRepository.isSavedFlow(SavedContentRepository.TYPE_MOVIE, movieId).collect { isSaved ->
+                _uiState.value = _uiState.value.copy(isSaved = isSaved)
+            }
+        }
     }
 
     private fun loadMovie() {
         viewModelScope.launch {
-            _uiState.value = MovieDetailUiState(isLoading = true)
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
                 val movie = repository.getMovieDetail(movieId)
-                _uiState.value = MovieDetailUiState(movie = movie)
+                _uiState.value = _uiState.value.copy(
+                    movie = movie,
+                    isLoading = false,
+                    error = null
+                )
             } catch (e: Exception) {
                 val httpCode = (e as? HttpStatusException)?.code
                 if (httpCode == 401) {
@@ -57,8 +73,18 @@ class MovieDetailViewModel @Inject constructor(
                     402 -> "Subscription required."
                     else -> "Failed to load movie details."
                 }
-                _uiState.value = MovieDetailUiState(error = errorMsg)
+                _uiState.value = _uiState.value.copy(
+                    movie = null,
+                    isLoading = false,
+                    error = errorMsg
+                )
             }
+        }
+    }
+
+    fun toggleSaved() {
+        viewModelScope.launch {
+            savedContentRepository.toggleSaved(SavedContentRepository.TYPE_MOVIE, movieId)
         }
     }
 }

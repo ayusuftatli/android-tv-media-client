@@ -11,6 +11,7 @@ import tv.ororo.app.ui.login.LoginScreen
 import tv.ororo.app.ui.movies.MovieBrowseScreen
 import tv.ororo.app.ui.movies.MovieDetailScreen
 import tv.ororo.app.ui.player.PlayerScreen
+import tv.ororo.app.ui.saved.SavedScreen
 import tv.ororo.app.ui.search.SearchScreen
 import tv.ororo.app.ui.shows.ShowBrowseScreen
 import tv.ororo.app.ui.shows.ShowDetailScreen
@@ -35,12 +36,25 @@ fun AppNavHost(
             HomeScreen(
                 onMoviesClick = { navController.navigate(Screen.MovieBrowse.route) },
                 onShowsClick = { navController.navigate(Screen.ShowBrowse.route) },
+                onSavedClick = { navController.navigate(Screen.Saved.route) },
                 onSearchClick = { navController.navigate(Screen.Search.route) },
                 onLogout = {
                     navController.navigate(Screen.Login.route) {
                         popUpTo(Screen.Home.route) { inclusive = true }
                     }
                 }
+            )
+        }
+
+        composable(Screen.Saved.route) {
+            SavedScreen(
+                onMovieClick = { movieId ->
+                    navController.navigate(Screen.MovieDetail.createRoute(movieId))
+                },
+                onShowClick = { showId ->
+                    navController.navigate(Screen.ShowDetail.createRoute(showId))
+                },
+                onBack = { navController.popBackStack() }
             )
         }
 

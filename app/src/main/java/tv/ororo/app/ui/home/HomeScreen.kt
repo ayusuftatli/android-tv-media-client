@@ -5,6 +5,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tv
@@ -34,6 +35,7 @@ import tv.ororo.app.R
 fun HomeScreen(
     onMoviesClick: () -> Unit,
     onShowsClick: () -> Unit,
+    onSavedClick: () -> Unit,
     onSearchClick: () -> Unit,
     onLogout: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel()
@@ -91,6 +93,12 @@ fun HomeScreen(
                     title = "Movies",
                     icon = Icons.Default.Movie,
                     onClick = onMoviesClick,
+                    modifier = Modifier.weight(1f)
+                )
+                HomeCard(
+                    title = "Saved",
+                    icon = Icons.Default.Bookmark,
+                    onClick = onSavedClick,
                     modifier = Modifier.weight(1f)
                 )
                 HomeCard(

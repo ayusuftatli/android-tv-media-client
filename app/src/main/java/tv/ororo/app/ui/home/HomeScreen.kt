@@ -20,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Cached
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tv
@@ -149,6 +150,12 @@ fun HomeScreen(
                     title = "TV Shows",
                     icon = Icons.Default.Tv,
                     onClick = onShowsClick,
+                    modifier = Modifier.weight(1f)
+                )
+                HomeCard(
+                    title = "Clear Cache",
+                    icon = Icons.Default.Cached,
+                    onClick = { viewModel.clearCache() },
                     modifier = Modifier.weight(1f)
                 )
                 HomeCard(

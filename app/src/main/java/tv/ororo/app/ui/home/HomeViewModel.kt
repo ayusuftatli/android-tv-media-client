@@ -53,6 +53,11 @@ class HomeViewModel @Inject constructor(
         ororoRepository.clearCache()
     }
 
+    fun clearCache() {
+        ororoRepository.clearCache()
+        episodeMetadataCache.clear()
+    }
+
     private fun observeContinueWatching() {
         viewModelScope.launch {
             watchProgressRepository.inProgressWatchStatesFlow().collectLatest { inProgressStates ->

@@ -83,6 +83,12 @@ class WatchProgressRepository @Inject constructor(
         }
     }
 
+    suspend fun clearProgress(contentKey: String) {
+        context.watchProgressDataStore.edit { prefs ->
+            prefs.remove(stringPreferencesKey(keyPrefix + contentKey))
+        }
+    }
+
     companion object {
         const val COMPLETION_THRESHOLD = 0.95
 

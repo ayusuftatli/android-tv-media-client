@@ -1,6 +1,7 @@
 package tv.ororo.app.ui.player
 
 import android.net.Uri
+import android.content.res.ColorStateList
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
@@ -12,8 +13,10 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -34,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.appcompat.widget.AppCompatButton
+import androidx.appcompat.widget.AppCompatImageButton
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -45,6 +49,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.DefaultTimeBar
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
+import tv.ororo.app.R
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
@@ -91,13 +96,37 @@ fun PlayerScreen(
                 }
                 var playerViewRef by remember { mutableStateOf<PlayerView?>(null) }
                 var nextEpisodeButtonRef by remember { mutableStateOf<AppCompatButton?>(null) }
+                var stopPlaybackButtonRef by remember { mutableStateOf<AppCompatImageButton?>(null) }
+                var showStopPlaybackDialog by remember(contentType, contentId) { mutableStateOf(false) }
+                var shouldPersistPlaybackProgress by remember(contentType, contentId) { mutableStateOf(true) }
                 val nextEpisode = uiState.nextEpisode
                 val hasNextEpisode = contentType == "episode" && nextEpisode != null
                 val latestHasNextEpisode by rememberUpdatedState(hasNextEpisode)
                 val latestNextEpisode by rememberUpdatedState(nextEpisode)
                 val latestOnNextEpisode by rememberUpdatedState(onNextEpisode)
+                val latestContentType by rememberUpdatedState(contentType)
+                val latestContentId by rememberUpdatedState(contentId)
+
+                fun stopPlaybackAndExit() {
+                    shouldPersistPlaybackProgress = false
+                    val durationMs = exoPlayer.duration
+                    val positionMs = exoPlayer.currentPosition.coerceAtLeast(0L)
+                    viewModel.onStopPlaybackRequested(
+                        contentType = latestContentType,
+                        contentId = latestContentId,
+                        positionMs = positionMs,
+                        durationMs = durationMs,
+                        onCompleted = onBack
+                    )
+                    exoPlayer.playWhenReady = false
+                    exoPlayer.stop()
+                }
 
                 BackHandler {
+                    if (showStopPlaybackDialog) {
+                        showStopPlaybackDialog = false
+                        return@BackHandler
+                    }
                     val playerView = playerViewRef
                     if (playerView != null && shouldHandleBackAsHideControls(playerView.isControllerFullyVisible)) {
                         playerView.hideController()
@@ -148,6 +177,7 @@ fun PlayerScreen(
                 LaunchedEffect(exoPlayer, uiState.streamUrl) {
                     while (true) {
                         delay(5_000)
+                        if (!shouldPersistPlaybackProgress) continue
                         val durationMs = exoPlayer.duration
                         if (durationMs > 0L) {
                             viewModel.onPlaybackProgress(
@@ -170,7 +200,7 @@ fun PlayerScreen(
                         }
 
                         override fun onPlaybackStateChanged(playbackState: Int) {
-                            if (playbackState == Player.STATE_ENDED) {
+                            if (playbackState == Player.STATE_ENDED && shouldPersistPlaybackProgress) {
                                 val durationMs = exoPlayer.duration
                                 if (durationMs > 0L) {
                                     viewModel.onPlaybackProgress(
@@ -187,15 +217,17 @@ fun PlayerScreen(
 
                     exoPlayer.addListener(listener)
                     onDispose {
-                        val durationMs = exoPlayer.duration
-                        if (durationMs > 0L) {
-                            viewModel.onPlaybackProgress(
-                                contentType = contentType,
-                                contentId = contentId,
-                                positionMs = exoPlayer.currentPosition,
-                                durationMs = durationMs,
-                                isEnded = exoPlayer.playbackState == Player.STATE_ENDED
-                            )
+                        if (shouldPersistPlaybackProgress) {
+                            val durationMs = exoPlayer.duration
+                            if (durationMs > 0L) {
+                                viewModel.onPlaybackProgress(
+                                    contentType = contentType,
+                                    contentId = contentId,
+                                    positionMs = exoPlayer.currentPosition,
+                                    durationMs = durationMs,
+                                    isEnded = exoPlayer.playbackState == Player.STATE_ENDED
+                                )
+                            }
                         }
                         exoPlayer.removeListener(listener)
                         exoPlayer.release()
@@ -218,6 +250,13 @@ fun PlayerScreen(
                                     didApplyInitialControllerFocus = true
                                 }
 
+                                val stopPlaybackButton = createStopPlaybackButton(ctx)
+                                attachStopPlaybackButton(this, stopPlaybackButton, ctx)
+                                stopPlaybackButtonRef = stopPlaybackButton
+                                stopPlaybackButton.setOnClickListener {
+                                    showStopPlaybackDialog = true
+                                }
+
                                 val nextEpisodeButton = createNextEpisodeButton(ctx)
                                 attachNextEpisodeButton(this, nextEpisodeButton, ctx)
                                 nextEpisodeButtonRef = nextEpisodeButton
@@ -237,6 +276,10 @@ fun PlayerScreen(
                                     if (visibility == View.VISIBLE) {
                                         post { applyInitialControllerFocusIfNeeded() }
                                     }
+                                    updateStopPlaybackButtonVisibility(
+                                        button = stopPlaybackButton,
+                                        isControllerVisible = visibility == View.VISIBLE
+                                    )
                                     updateNextEpisodeButtonVisibility(
                                         button = nextEpisodeButton,
                                         isControllerVisible = visibility == View.VISIBLE,
@@ -246,11 +289,17 @@ fun PlayerScreen(
                                 post {
                                     requestFocus()
                                     applyInitialControllerFocusIfNeeded()
+                                    attachStopPlaybackButton(this, stopPlaybackButton, ctx)
                                     attachNextEpisodeButton(this, nextEpisodeButton, ctx)
-                                    ensureNextEpisodeFocusLinks(
+                                    ensurePlaybackActionFocusLinks(
                                         playerView = this,
+                                        stopPlaybackButton = stopPlaybackButton,
                                         nextEpisodeButton = nextEpisodeButton,
                                         hasNextEpisode = latestHasNextEpisode
+                                    )
+                                    updateStopPlaybackButtonVisibility(
+                                        button = stopPlaybackButton,
+                                        isControllerVisible = isControllerFullyVisible
                                     )
                                     updateNextEpisodeButtonVisibility(
                                         button = nextEpisodeButton,
@@ -266,7 +315,8 @@ fun PlayerScreen(
                                         playerView = view as PlayerView,
                                         onBack = onBack,
                                         hasNextEpisode = hasNextEpisode,
-                                        onNextEpisode = nextEpisode?.let { { onNextEpisode(it.id) } }
+                                        onNextEpisode = nextEpisode?.let { { onNextEpisode(it.id) } },
+                                        onStopRequested = { showStopPlaybackDialog = true }
                                     )
                                     updateProgressBarSelectionState(view as PlayerView)
                                     handled
@@ -278,8 +328,9 @@ fun PlayerScreen(
                                             updateProgressBarSelectionState(this)
                                         }
                                     updateProgressBarSelectionState(this)
-                                    ensureNextEpisodeFocusLinks(
+                                    ensurePlaybackActionFocusLinks(
                                         playerView = this,
+                                        stopPlaybackButton = stopPlaybackButton,
                                         nextEpisodeButton = nextEpisodeButton,
                                         hasNextEpisode = latestHasNextEpisode
                                     )
@@ -289,6 +340,16 @@ fun PlayerScreen(
                         update = { playerView ->
                             playerViewRef = playerView
                             updateProgressBarSelectionState(playerView)
+                            stopPlaybackButtonRef?.let { stopButton ->
+                                stopButton.setOnClickListener {
+                                    showStopPlaybackDialog = true
+                                }
+                                updateStopPlaybackButtonVisibility(
+                                    button = stopButton,
+                                    isControllerVisible = playerView.isControllerFullyVisible
+                                )
+                                attachStopPlaybackButton(playerView, stopButton, playerView.context)
+                            }
                             nextEpisodeButtonRef?.let { nextButton ->
                                 nextButton.text = buildNextEpisodeButtonText(nextEpisode)
                                 nextButton.setOnClickListener {
@@ -300,8 +361,9 @@ fun PlayerScreen(
                                     hasNextEpisode = hasNextEpisode
                                 )
                                 attachNextEpisodeButton(playerView, nextButton, playerView.context)
-                                ensureNextEpisodeFocusLinks(
+                                ensurePlaybackActionFocusLinks(
                                     playerView = playerView,
+                                    stopPlaybackButton = stopPlaybackButtonRef,
                                     nextEpisodeButton = nextButton,
                                     hasNextEpisode = hasNextEpisode
                                 )
@@ -320,12 +382,40 @@ fun PlayerScreen(
                                     playerView = playerView,
                                     onBack = onBack,
                                     hasNextEpisode = hasNextEpisode,
-                                    onNextEpisode = nextEpisode?.let { { onNextEpisode(it.id) } }
+                                    onNextEpisode = nextEpisode?.let { { onNextEpisode(it.id) } },
+                                    onStopRequested = { showStopPlaybackDialog = true }
                                 )
                                 updateProgressBarSelectionState(playerView)
                                 handled
                             }
                     )
+
+                    if (showStopPlaybackDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showStopPlaybackDialog = false },
+                            title = { Text(text = "Stop playback?") },
+                            text = {
+                                Text(
+                                    text = "This will exit player. Watched under 95% will be reset to never watched."
+                                )
+                            },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        showStopPlaybackDialog = false
+                                        stopPlaybackAndExit()
+                                    }
+                                ) {
+                                    Text("Stop & Exit")
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showStopPlaybackDialog = false }) {
+                                    Text("Cancel")
+                                }
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -338,7 +428,8 @@ private fun handlePlayerKeyDown(
     playerView: PlayerView,
     onBack: () -> Unit,
     hasNextEpisode: Boolean,
-    onNextEpisode: (() -> Unit)?
+    onNextEpisode: (() -> Unit)?,
+    onStopRequested: () -> Unit
 ): Boolean {
     when (keyCode) {
         KeyEvent.KEYCODE_MEDIA_NEXT -> {
@@ -346,6 +437,11 @@ private fun handlePlayerKeyDown(
                 onNextEpisode?.invoke()
                 return true
             }
+        }
+
+        KeyEvent.KEYCODE_MEDIA_STOP -> {
+            onStopRequested()
+            return true
         }
 
         KeyEvent.KEYCODE_DPAD_LEFT -> {
@@ -509,7 +605,117 @@ private val playPauseWhenControllerHiddenKeys = setOf(
     KeyEvent.KEYCODE_SPACE
 )
 
+private const val STOP_PLAYBACK_BUTTON_TAG = "stop_playback_button"
 private const val NEXT_EPISODE_BUTTON_TAG = "next_episode_button"
+
+private fun createStopPlaybackButton(context: android.content.Context): AppCompatImageButton {
+    return AppCompatImageButton(context).apply {
+        tag = STOP_PLAYBACK_BUTTON_TAG
+        id = View.generateViewId()
+        setImageResource(R.drawable.ic_stop_square_24)
+        contentDescription = "Stop playback"
+        isFocusable = true
+        isFocusableInTouchMode = true
+        setOnFocusChangeListener { v, hasFocus ->
+            val button = v as AppCompatImageButton
+            button.imageTintList = ColorStateList.valueOf(
+                if (hasFocus) 0xFF22C55E.toInt() else 0xFFFFFFFF.toInt()
+            )
+        }
+        visibility = View.GONE
+    }
+}
+
+private fun attachStopPlaybackButton(
+    playerView: PlayerView,
+    stopPlaybackButton: AppCompatImageButton,
+    context: android.content.Context
+) {
+    applyStopPlaybackButtonStyleFromPlaybackControls(playerView, stopPlaybackButton, context)
+    stopPlaybackButton.isEnabled = true
+    stopPlaybackButton.isClickable = true
+
+    val timeGroup = playerView.findViewById<View>(androidx.media3.ui.R.id.exo_time) as? ViewGroup
+    if (timeGroup != null) {
+        if (stopPlaybackButton.parent !== timeGroup) {
+            (stopPlaybackButton.parent as? ViewGroup)?.removeView(stopPlaybackButton)
+            val params: ViewGroup.LayoutParams = if (timeGroup is LinearLayout) {
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    marginStart = dpToPx(context, 10)
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+            } else {
+                ViewGroup.MarginLayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    marginStart = dpToPx(context, 10)
+                }
+            }
+            timeGroup.addView(stopPlaybackButton, params)
+        }
+        return
+    }
+
+    if (stopPlaybackButton.parent == null) {
+        playerView.addView(
+            stopPlaybackButton,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.END or Gravity.BOTTOM
+            ).apply {
+                marginEnd = dpToPx(context, 120)
+                bottomMargin = dpToPx(context, 72)
+            }
+        )
+    }
+}
+
+private fun applyStopPlaybackButtonStyleFromPlaybackControls(
+    playerView: PlayerView,
+    stopPlaybackButton: AppCompatImageButton,
+    context: android.content.Context
+) {
+    val styleSource = playerView.findViewById<View>(androidx.media3.ui.R.id.exo_play_pause)
+
+    if (styleSource != null) {
+        stopPlaybackButton.background = styleSource.background?.constantState?.newDrawable()?.mutate()
+        stopPlaybackButton.minimumWidth = styleSource.minimumWidth
+        stopPlaybackButton.minimumHeight = styleSource.minimumHeight
+        stopPlaybackButton.setPadding(
+            styleSource.paddingLeft,
+            styleSource.paddingTop,
+            styleSource.paddingRight,
+            styleSource.paddingBottom
+        )
+        stopPlaybackButton.imageTintList = ColorStateList.valueOf(
+            if (stopPlaybackButton.hasFocus()) 0xFF22C55E.toInt() else 0xFFFFFFFF.toInt()
+        )
+        return
+    }
+
+    stopPlaybackButton.setBackgroundColor(0x66000000)
+    stopPlaybackButton.setPadding(
+        dpToPx(context, 8),
+        dpToPx(context, 8),
+        dpToPx(context, 8),
+        dpToPx(context, 8)
+    )
+    stopPlaybackButton.imageTintList = ColorStateList.valueOf(
+        if (stopPlaybackButton.hasFocus()) 0xFF22C55E.toInt() else 0xFFFFFFFF.toInt()
+    )
+}
+
+private fun updateStopPlaybackButtonVisibility(
+    button: View,
+    isControllerVisible: Boolean
+) {
+    button.visibility = if (isControllerVisible) View.VISIBLE else View.GONE
+}
 
 private fun createNextEpisodeButton(context: android.content.Context): AppCompatButton {
     return AppCompatButton(context).apply {
@@ -546,6 +752,7 @@ private fun attachNextEpisodeButton(
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 ).apply {
                     marginStart = dpToPx(context, 10)
+                    gravity = Gravity.CENTER_VERTICAL
                 }
             } else {
                 ViewGroup.MarginLayoutParams(
@@ -617,19 +824,25 @@ private fun updateNextEpisodeButtonVisibility(
     button.visibility = if (isControllerVisible && hasNextEpisode) View.VISIBLE else View.GONE
 }
 
-private fun ensureNextEpisodeFocusLinks(
+private fun ensurePlaybackActionFocusLinks(
     playerView: PlayerView,
+    stopPlaybackButton: View?,
     nextEpisodeButton: View,
     hasNextEpisode: Boolean
 ) {
     val progressBar = playerView.findViewById<View>(androidx.media3.ui.R.id.exo_progress)
     val duration = playerView.findViewById<View>(androidx.media3.ui.R.id.exo_duration)
     val playPause = playerView.findViewById<View>(androidx.media3.ui.R.id.exo_play_pause)
+    val stopButton = stopPlaybackButton ?: return
 
     if (!hasNextEpisode) {
-        progressBar?.nextFocusDownId = View.NO_ID
-        duration?.nextFocusRightId = View.NO_ID
+        progressBar?.nextFocusDownId = stopButton.id
+        duration?.nextFocusRightId = stopButton.id
         playPause?.nextFocusUpId = View.NO_ID
+        stopButton.nextFocusUpId = androidx.media3.ui.R.id.exo_progress
+        stopButton.nextFocusDownId = androidx.media3.ui.R.id.exo_progress
+        stopButton.nextFocusLeftId = androidx.media3.ui.R.id.exo_duration
+        stopButton.nextFocusRightId = View.NO_ID
         nextEpisodeButton.nextFocusUpId = View.NO_ID
         nextEpisodeButton.nextFocusDownId = View.NO_ID
         nextEpisodeButton.nextFocusLeftId = View.NO_ID
@@ -637,12 +850,16 @@ private fun ensureNextEpisodeFocusLinks(
         return
     }
 
-    progressBar?.nextFocusDownId = nextEpisodeButton.id
-    duration?.nextFocusRightId = nextEpisodeButton.id
+    progressBar?.nextFocusDownId = stopButton.id
+    duration?.nextFocusRightId = stopButton.id
     playPause?.nextFocusUpId = View.NO_ID
+    stopButton.nextFocusUpId = androidx.media3.ui.R.id.exo_progress
+    stopButton.nextFocusDownId = androidx.media3.ui.R.id.exo_progress
+    stopButton.nextFocusLeftId = androidx.media3.ui.R.id.exo_duration
+    stopButton.nextFocusRightId = nextEpisodeButton.id
     nextEpisodeButton.nextFocusUpId = androidx.media3.ui.R.id.exo_progress
     nextEpisodeButton.nextFocusDownId = androidx.media3.ui.R.id.exo_progress
-    nextEpisodeButton.nextFocusLeftId = androidx.media3.ui.R.id.exo_duration
+    nextEpisodeButton.nextFocusLeftId = stopButton.id
     nextEpisodeButton.nextFocusRightId = View.NO_ID
 }
 

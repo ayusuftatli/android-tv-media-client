@@ -181,6 +181,32 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    fun onStopPlaybackRequested(
+        contentType: String,
+        contentId: Int,
+        positionMs: Long,
+        durationMs: Long,
+        onCompleted: () -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val key = WatchProgressRepository.contentKey(contentType, contentId)
+                if (WatchProgressRepository.isCompleted(positionMs, durationMs, isEnded = false)) {
+                    watchProgressRepository.saveProgress(
+                        contentKey = key,
+                        positionMs = positionMs,
+                        durationMs = durationMs,
+                        isEnded = false
+                    )
+                } else {
+                    watchProgressRepository.clearProgress(key)
+                }
+            } finally {
+                onCompleted()
+            }
+        }
+    }
+
     private suspend fun resolveNextEpisode(currentEpisode: EpisodeDetail): Episode? {
         val currentSeason = currentEpisode.season ?: return null
         val currentNumber = currentEpisode.number ?: return null

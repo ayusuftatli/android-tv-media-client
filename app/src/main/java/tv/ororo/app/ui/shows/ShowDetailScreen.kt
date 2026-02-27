@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
@@ -153,7 +154,12 @@ private fun ShowDetailContent(
                         ),
                         shape = ClickableSurfaceDefaults.shape(
                             shape = RoundedCornerShape(8.dp)
-                        )
+                        ),
+                        modifier = Modifier.onFocusChanged { focusState ->
+                            if (focusState.isFocused && season != uiState.selectedSeason) {
+                                onSeasonSelected(season)
+                            }
+                        }
                     ) {
                         Text(
                             text = "S$season",

@@ -1,11 +1,13 @@
 package tv.ororo.app.ui.player
 
 import android.net.Uri
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.LinearLayout
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -217,7 +219,7 @@ fun PlayerScreen(
                                 }
 
                                 val nextEpisodeButton = createNextEpisodeButton(ctx)
-                                addView(nextEpisodeButton, createNextEpisodeButtonLayoutParams(ctx))
+                                attachNextEpisodeButton(this, nextEpisodeButton, ctx)
                                 nextEpisodeButtonRef = nextEpisodeButton
                                 nextEpisodeButton.setOnClickListener {
                                     latestNextEpisode?.let { latestOnNextEpisode(it.id) }
@@ -244,7 +246,12 @@ fun PlayerScreen(
                                 post {
                                     requestFocus()
                                     applyInitialControllerFocusIfNeeded()
-                                    ensureNextEpisodeFocusLinks(this, nextEpisodeButton)
+                                    attachNextEpisodeButton(this, nextEpisodeButton, ctx)
+                                    ensureNextEpisodeFocusLinks(
+                                        playerView = this,
+                                        nextEpisodeButton = nextEpisodeButton,
+                                        hasNextEpisode = latestHasNextEpisode
+                                    )
                                     updateNextEpisodeButtonVisibility(
                                         button = nextEpisodeButton,
                                         isControllerVisible = isControllerFullyVisible,
@@ -271,7 +278,11 @@ fun PlayerScreen(
                                             updateProgressBarSelectionState(this)
                                         }
                                     updateProgressBarSelectionState(this)
-                                    ensureNextEpisodeFocusLinks(this, nextEpisodeButton)
+                                    ensureNextEpisodeFocusLinks(
+                                        playerView = this,
+                                        nextEpisodeButton = nextEpisodeButton,
+                                        hasNextEpisode = latestHasNextEpisode
+                                    )
                                 }
                             }
                         },
@@ -288,7 +299,12 @@ fun PlayerScreen(
                                     isControllerVisible = playerView.isControllerFullyVisible,
                                     hasNextEpisode = hasNextEpisode
                                 )
-                                ensureNextEpisodeFocusLinks(playerView, nextButton)
+                                attachNextEpisodeButton(playerView, nextButton, playerView.context)
+                                ensureNextEpisodeFocusLinks(
+                                    playerView = playerView,
+                                    nextEpisodeButton = nextButton,
+                                    hasNextEpisode = hasNextEpisode
+                                )
                             }
                         },
                         modifier = Modifier
@@ -328,27 +344,6 @@ private fun handlePlayerKeyDown(
         KeyEvent.KEYCODE_MEDIA_NEXT -> {
             if (hasNextEpisode) {
                 onNextEpisode?.invoke()
-                return true
-            }
-        }
-
-        KeyEvent.KEYCODE_DPAD_UP -> {
-            val nextEpisodeButton = findNextEpisodeButton(playerView)
-            if (
-                hasNextEpisode &&
-                playerView.isControllerFullyVisible &&
-                nextEpisodeButton != null &&
-                nextEpisodeButton.visibility == View.VISIBLE
-            ) {
-                nextEpisodeButton.requestFocus()
-                return true
-            }
-        }
-
-        KeyEvent.KEYCODE_DPAD_DOWN -> {
-            val nextEpisodeButton = findNextEpisodeButton(playerView)
-            if (nextEpisodeButton != null && nextEpisodeButton.hasFocus()) {
-                focusDefaultControl(playerView)
                 return true
             }
         }
@@ -516,17 +511,6 @@ private val playPauseWhenControllerHiddenKeys = setOf(
 
 private const val NEXT_EPISODE_BUTTON_TAG = "next_episode_button"
 
-private fun createNextEpisodeButtonLayoutParams(context: android.content.Context): FrameLayout.LayoutParams {
-    return FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.WRAP_CONTENT,
-        ViewGroup.LayoutParams.WRAP_CONTENT,
-        Gravity.END or Gravity.BOTTOM
-    ).apply {
-        marginEnd = dpToPx(context, 24)
-        bottomMargin = dpToPx(context, 72)
-    }
-}
-
 private fun createNextEpisodeButton(context: android.content.Context): AppCompatButton {
     return AppCompatButton(context).apply {
         tag = NEXT_EPISODE_BUTTON_TAG
@@ -535,20 +519,94 @@ private fun createNextEpisodeButton(context: android.content.Context): AppCompat
         isAllCaps = false
         isFocusable = true
         isFocusableInTouchMode = true
-        setTextColor(0xFF000000.toInt())
-        setBackgroundColor(0xFF22C55E.toInt())
-        setPadding(
-            dpToPx(context, 16),
-            dpToPx(context, 8),
-            dpToPx(context, 16),
-            dpToPx(context, 8)
-        )
+        setOnFocusChangeListener { v, hasFocus ->
+            val button = v as AppCompatButton
+            button.setTextColor(if (hasFocus) 0xFF22C55E.toInt() else 0xFFFFFFFF.toInt())
+        }
         visibility = View.GONE
     }
 }
 
-private fun findNextEpisodeButton(playerView: PlayerView): View? {
-    return playerView.findViewWithTag(NEXT_EPISODE_BUTTON_TAG)
+private fun attachNextEpisodeButton(
+    playerView: PlayerView,
+    nextEpisodeButton: AppCompatButton,
+    context: android.content.Context
+) {
+    applyNextEpisodeButtonStyleFromPlaybackControls(playerView, nextEpisodeButton, context)
+    nextEpisodeButton.isEnabled = true
+    nextEpisodeButton.isClickable = true
+
+    val timeGroup = playerView.findViewById<View>(androidx.media3.ui.R.id.exo_time) as? ViewGroup
+    if (timeGroup != null) {
+        if (nextEpisodeButton.parent !== timeGroup) {
+            (nextEpisodeButton.parent as? ViewGroup)?.removeView(nextEpisodeButton)
+            val params: ViewGroup.LayoutParams = if (timeGroup is LinearLayout) {
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    marginStart = dpToPx(context, 10)
+                }
+            } else {
+                ViewGroup.MarginLayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    marginStart = dpToPx(context, 10)
+                }
+            }
+            timeGroup.addView(nextEpisodeButton, params)
+        }
+        return
+    }
+
+    if (nextEpisodeButton.parent == null) {
+        playerView.addView(
+            nextEpisodeButton,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.END or Gravity.BOTTOM
+            ).apply {
+                marginEnd = dpToPx(context, 24)
+                bottomMargin = dpToPx(context, 72)
+            }
+        )
+    }
+}
+
+private fun applyNextEpisodeButtonStyleFromPlaybackControls(
+    playerView: PlayerView,
+    nextEpisodeButton: AppCompatButton,
+    context: android.content.Context
+) {
+    val styleSource = playerView.findViewById<View>(androidx.media3.ui.R.id.exo_subtitle)
+        ?: playerView.findViewById(androidx.media3.ui.R.id.exo_settings)
+
+    if (styleSource is android.widget.TextView) {
+        nextEpisodeButton.background = styleSource.background?.constantState?.newDrawable()?.mutate()
+        nextEpisodeButton.setTextColor(
+            if (nextEpisodeButton.hasFocus()) 0xFF22C55E.toInt() else styleSource.currentTextColor
+        )
+        nextEpisodeButton.setTextSize(TypedValue.COMPLEX_UNIT_PX, styleSource.textSize)
+        nextEpisodeButton.typeface = styleSource.typeface
+        nextEpisodeButton.setPadding(
+            styleSource.paddingLeft,
+            styleSource.paddingTop,
+            styleSource.paddingRight,
+            styleSource.paddingBottom
+        )
+        return
+    }
+
+    nextEpisodeButton.setTextColor(0xFFFFFFFF.toInt())
+    nextEpisodeButton.setBackgroundColor(0x66000000)
+    nextEpisodeButton.setPadding(
+        dpToPx(context, 12),
+        dpToPx(context, 6),
+        dpToPx(context, 12),
+        dpToPx(context, 6)
+    )
 }
 
 private fun updateNextEpisodeButtonVisibility(
@@ -559,12 +617,33 @@ private fun updateNextEpisodeButtonVisibility(
     button.visibility = if (isControllerVisible && hasNextEpisode) View.VISIBLE else View.GONE
 }
 
-private fun ensureNextEpisodeFocusLinks(playerView: PlayerView, nextEpisodeButton: View) {
+private fun ensureNextEpisodeFocusLinks(
+    playerView: PlayerView,
+    nextEpisodeButton: View,
+    hasNextEpisode: Boolean
+) {
     val progressBar = playerView.findViewById<View>(androidx.media3.ui.R.id.exo_progress)
+    val duration = playerView.findViewById<View>(androidx.media3.ui.R.id.exo_duration)
     val playPause = playerView.findViewById<View>(androidx.media3.ui.R.id.exo_play_pause)
-    progressBar?.nextFocusUpId = nextEpisodeButton.id
-    playPause?.nextFocusUpId = nextEpisodeButton.id
+
+    if (!hasNextEpisode) {
+        progressBar?.nextFocusDownId = View.NO_ID
+        duration?.nextFocusRightId = View.NO_ID
+        playPause?.nextFocusUpId = View.NO_ID
+        nextEpisodeButton.nextFocusUpId = View.NO_ID
+        nextEpisodeButton.nextFocusDownId = View.NO_ID
+        nextEpisodeButton.nextFocusLeftId = View.NO_ID
+        nextEpisodeButton.nextFocusRightId = View.NO_ID
+        return
+    }
+
+    progressBar?.nextFocusDownId = nextEpisodeButton.id
+    duration?.nextFocusRightId = nextEpisodeButton.id
+    playPause?.nextFocusUpId = View.NO_ID
+    nextEpisodeButton.nextFocusUpId = androidx.media3.ui.R.id.exo_progress
     nextEpisodeButton.nextFocusDownId = androidx.media3.ui.R.id.exo_progress
+    nextEpisodeButton.nextFocusLeftId = androidx.media3.ui.R.id.exo_duration
+    nextEpisodeButton.nextFocusRightId = View.NO_ID
 }
 
 private fun buildNextEpisodeButtonText(nextEpisode: NextEpisodeUi?): String {

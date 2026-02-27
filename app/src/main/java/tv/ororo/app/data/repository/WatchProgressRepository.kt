@@ -89,6 +89,14 @@ class WatchProgressRepository @Inject constructor(
         }
     }
 
+    suspend fun clearAllProgress() {
+        context.watchProgressDataStore.edit { prefs ->
+            val keysToRemove = prefs.asMap().keys
+                .filter { key -> key.name.startsWith(keyPrefix) }
+            keysToRemove.forEach { key -> prefs.remove(key) }
+        }
+    }
+
     companion object {
         const val COMPLETION_THRESHOLD = 0.95
 

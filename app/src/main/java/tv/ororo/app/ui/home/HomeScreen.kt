@@ -67,10 +67,9 @@ fun HomeScreen(
     val continueWatchingFocusRequester = remember { FocusRequester() }
     var initialFocusApplied by remember { mutableStateOf(false) }
 
-    LaunchedEffect(uiState.isLoadingContinueWatching, uiState.continueWatching.isNotEmpty()) {
-        if (initialFocusApplied || uiState.isLoadingContinueWatching) return@LaunchedEffect
-        val initialFocusTarget =
-            if (uiState.continueWatching.isNotEmpty()) continueWatchingFocusRequester else searchFocusRequester
+    LaunchedEffect(Unit) {
+        if (initialFocusApplied) return@LaunchedEffect
+        val initialFocusTarget = searchFocusRequester
         try {
             initialFocusTarget.requestFocus()
             initialFocusApplied = true
@@ -104,20 +103,6 @@ fun HomeScreen(
                 fontSize = 32.sp,
                 color = Color.White
             )
-
-            if (uiState.isLoadingContinueWatching) {
-                Spacer(modifier = Modifier.height(28.dp))
-                CircularProgressIndicator(color = Color(0xFF6C63FF))
-            }
-
-            if (!uiState.isLoadingContinueWatching && uiState.continueWatching.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(24.dp))
-                ContinueWatchingRow(
-                    items = uiState.continueWatching,
-                    onContinueWatchingClick = onContinueWatchingClick,
-                    firstItemFocusRequester = continueWatchingFocusRequester
-                )
-            }
 
             Spacer(modifier = Modifier.height(32.dp))
 
@@ -153,9 +138,9 @@ fun HomeScreen(
                     modifier = Modifier.weight(1f)
                 )
                 HomeCard(
-                    title = "Clear Cache",
+                    title = "Clear Data",
                     icon = Icons.Default.Cached,
-                    onClick = { viewModel.clearCache() },
+                    onClick = { viewModel.clearLocalData() },
                     modifier = Modifier.weight(1f)
                 )
                 HomeCard(
@@ -168,6 +153,20 @@ fun HomeScreen(
                         }
                     },
                     modifier = Modifier.weight(1f)
+                )
+            }
+
+            if (uiState.isLoadingContinueWatching) {
+                Spacer(modifier = Modifier.height(28.dp))
+                CircularProgressIndicator(color = Color(0xFF6C63FF))
+            }
+
+            if (!uiState.isLoadingContinueWatching && uiState.continueWatching.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(24.dp))
+                ContinueWatchingRow(
+                    items = uiState.continueWatching,
+                    onContinueWatchingClick = onContinueWatchingClick,
+                    firstItemFocusRequester = continueWatchingFocusRequester
                 )
             }
         }

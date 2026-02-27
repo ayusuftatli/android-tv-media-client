@@ -53,9 +53,12 @@ class HomeViewModel @Inject constructor(
         ororoRepository.clearCache()
     }
 
-    fun clearCache() {
-        ororoRepository.clearCache()
-        episodeMetadataCache.clear()
+    fun clearLocalData() {
+        viewModelScope.launch {
+            watchProgressRepository.clearAllProgress()
+            ororoRepository.clearCache()
+            episodeMetadataCache.clear()
+        }
     }
 
     private fun observeContinueWatching() {

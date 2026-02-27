@@ -44,6 +44,7 @@ data class EpisodeDto(
 data class EpisodeDetailDto(
     @SerialName("id") val id: Int,
     @SerialName("name") val name: String? = null,
+    @SerialName("show_id") val showId: Int? = null,
     @SerialName("show_name") val showName: String? = null,
     @SerialName("season") val season: Int? = null,
     @SerialName("number") val number: Int? = null,

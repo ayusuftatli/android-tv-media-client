@@ -11,6 +11,8 @@ import kotlinx.coroutines.launch
 import tv.ororo.app.data.api.HttpStatusException
 import tv.ororo.app.data.auth.AuthEvent
 import tv.ororo.app.data.auth.AuthEventBus
+import tv.ororo.app.data.domain.model.Episode
+import tv.ororo.app.data.domain.model.EpisodeDetail
 import tv.ororo.app.data.domain.model.Subtitle
 import tv.ororo.app.data.repository.OroroRepository
 import tv.ororo.app.data.repository.SessionRepository
@@ -19,6 +21,12 @@ import tv.ororo.app.data.repository.WatchProgressRepository
 import java.util.Locale
 import javax.inject.Inject
 
+data class NextEpisodeUi(
+    val id: Int,
+    val label: String,
+    val title: String?
+)
+
 data class PlayerUiState(
     val streamUrl: String? = null,
     val title: String = "",
@@ -26,6 +34,7 @@ data class PlayerUiState(
     val resumePositionMs: Long = 0L,
     val selectedSubtitleLang: String? = null,
     val subtitlesEnabled: Boolean = true,
+    val nextEpisode: NextEpisodeUi? = null,
     val isLoading: Boolean = false,
     val error: String? = null
 )
@@ -76,6 +85,14 @@ class PlayerViewModel @Inject constructor(
 
                     "episode" -> {
                         val episode = repository.getEpisodeDetail(id)
+                        val nextEpisode = try {
+                            resolveNextEpisode(episode)
+                        } catch (e: HttpStatusException) {
+                            if (e.code == 401) throw e
+                            null
+                        } catch (_: Exception) {
+                            null
+                        }
                         val title = if (episode.showName != null && episode.season != null && episode.number != null) {
                             "${episode.showName} S%02dE%02d".format(episode.season, episode.number)
                         } else {
@@ -91,7 +108,14 @@ class PlayerViewModel @Inject constructor(
                                 preferredSubtitleLang,
                                 subtitlesEnabled
                             ),
-                            subtitlesEnabled = subtitlesEnabled
+                            subtitlesEnabled = subtitlesEnabled,
+                            nextEpisode = nextEpisode?.let {
+                                NextEpisodeUi(
+                                    id = it.id,
+                                    label = "S%02dE%02d".format(it.season, it.number),
+                                    title = it.name
+                                )
+                            }
                         )
                     }
                 }
@@ -156,6 +180,34 @@ class PlayerViewModel @Inject constructor(
             watchProgressRepository.saveProgress(key, positionMs, durationMs, isEnded)
         }
     }
+
+    private suspend fun resolveNextEpisode(currentEpisode: EpisodeDetail): Episode? {
+        val currentSeason = currentEpisode.season ?: return null
+        val currentNumber = currentEpisode.number ?: return null
+        val showId = currentEpisode.showId ?: findShowIdByName(currentEpisode.showName) ?: return null
+        val show = repository.getShowDetail(showId)
+        return findNextEpisode(show.episodes, currentSeason, currentNumber)
+    }
+
+    private suspend fun findShowIdByName(showName: String?): Int? {
+        val target = normalizeShowName(showName) ?: return null
+        return repository.getShows()
+            .firstOrNull { normalizeShowName(it.name) == target }
+            ?.id
+    }
+}
+
+internal fun findNextEpisode(
+    episodes: List<Episode>,
+    currentSeason: Int,
+    currentNumber: Int
+): Episode? {
+    return episodes
+        .sortedWith(compareBy(Episode::season, Episode::number))
+        .firstOrNull { episode ->
+            episode.season > currentSeason ||
+                (episode.season == currentSeason && episode.number > currentNumber)
+        }
 }
 
 internal fun selectPreferredSubtitleLanguage(
@@ -175,4 +227,9 @@ internal fun selectPreferredSubtitleLanguage(
 internal fun normalizeLanguage(value: String?): String? {
     if (value.isNullOrBlank()) return null
     return value.substringBefore('-').substringBefore('_').lowercase(Locale.US)
+}
+
+private fun normalizeShowName(value: String?): String? {
+    if (value.isNullOrBlank()) return null
+    return value.lowercase(Locale.US).trim().replace("\\s+".toRegex(), " ")
 }

@@ -129,7 +129,12 @@ fun AppNavHost(
             PlayerScreen(
                 contentType = type,
                 contentId = id,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onNextEpisode = { nextEpisodeId ->
+                    navController.navigate(Screen.Player.createRoute("episode", nextEpisodeId)) {
+                        popUpTo(backStackEntry.destination.id) { inclusive = true }
+                    }
+                }
             )
         }
     }

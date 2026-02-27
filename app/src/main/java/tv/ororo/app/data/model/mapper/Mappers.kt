@@ -70,6 +70,7 @@ fun EpisodeDto.toDomain() = Episode(
 fun EpisodeDetailDto.toDomain() = EpisodeDetail(
     id = id,
     name = name,
+    showId = showId,
     showName = showName,
     season = season,
     number = number,

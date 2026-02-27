@@ -67,6 +67,7 @@ data class Episode(
 data class EpisodeDetail(
     val id: Int,
     val name: String?,
+    val showId: Int?,
     val showName: String?,
     val season: Int?,
     val number: Int?,

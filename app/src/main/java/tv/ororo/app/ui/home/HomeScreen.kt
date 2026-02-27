@@ -1,20 +1,26 @@
 package tv.ororo.app.ui.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -22,6 +28,7 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import android.util.Log
 import kotlinx.coroutines.launch
+import tv.ororo.app.R
 
 @Composable
 fun HomeScreen(
@@ -32,8 +39,13 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val scope = rememberCoroutineScope()
+    val searchFocusRequester = remember { FocusRequester() }
 
     Log.d("HomeScreen", "HomeScreen composed")
+
+    LaunchedEffect(Unit) {
+        searchFocusRequester.requestFocus()
+    }
 
     Box(
         modifier = Modifier
@@ -45,6 +57,14 @@ fun HomeScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(modifier = Modifier.height(48.dp))
+
+            Image(
+                painter = painterResource(id = R.drawable.ororo_logo),
+                contentDescription = "Ororo TV logo",
+                modifier = Modifier.size(88.dp)
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             Text(
                 text = "Ororo TV",
@@ -61,6 +81,13 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally)
             ) {
                 HomeCard(
+                    title = "Search",
+                    icon = Icons.Default.Search,
+                    onClick = onSearchClick,
+                    focusRequester = searchFocusRequester,
+                    modifier = Modifier.weight(1f)
+                )
+                HomeCard(
                     title = "Movies",
                     icon = Icons.Default.Movie,
                     onClick = onMoviesClick,
@@ -73,14 +100,8 @@ fun HomeScreen(
                     modifier = Modifier.weight(1f)
                 )
                 HomeCard(
-                    title = "Search",
-                    icon = Icons.Default.Search,
-                    onClick = onSearchClick,
-                    modifier = Modifier.weight(1f)
-                )
-                HomeCard(
                     title = "Logout",
-                    icon = Icons.Default.Logout,
+                    icon = Icons.AutoMirrored.Filled.Logout,
                     onClick = {
                         scope.launch {
                             viewModel.logout()
@@ -99,11 +120,18 @@ private fun HomeCard(
     title: String,
     icon: ImageVector,
     onClick: () -> Unit,
+    focusRequester: FocusRequester? = null,
     modifier: Modifier = Modifier
 ) {
+    val cardModifier = if (focusRequester != null) {
+        modifier.focusRequester(focusRequester)
+    } else {
+        modifier
+    }
+
     Surface(
         onClick = onClick,
-        modifier = modifier.height(180.dp),
+        modifier = cardModifier.height(180.dp),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = Color(0xFF16213e),
             focusedContainerColor = Color(0xFF6C63FF)

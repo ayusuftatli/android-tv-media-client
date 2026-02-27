@@ -193,6 +193,14 @@ fun PlayerScreen(
                     AndroidView(
                         factory = { ctx ->
                             PlayerView(ctx).apply {
+                                var didApplyInitialControllerFocus = false
+                                fun applyInitialControllerFocusIfNeeded() {
+                                    if (didApplyInitialControllerFocus || !isControllerFullyVisible) return
+                                    focusDefaultControl(this)
+                                    updateProgressBarSelectionState(this)
+                                    didApplyInitialControllerFocus = true
+                                }
+
                                 player = exoPlayer
                                 useController = true
                                 setShowSubtitleButton(true)
@@ -201,7 +209,15 @@ fun PlayerScreen(
                                 controllerAutoShow = true
                                 controllerHideOnTouch = false
                                 keepScreenOn = true
-                                post { requestFocus() }
+                                setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { visibility ->
+                                    if (visibility == View.VISIBLE) {
+                                        post { applyInitialControllerFocusIfNeeded() }
+                                    }
+                                })
+                                post {
+                                    requestFocus()
+                                    applyInitialControllerFocusIfNeeded()
+                                }
                                 setOnKeyListener { view, keyCode, event ->
                                     if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
                                     val handled = handlePlayerKeyDown(

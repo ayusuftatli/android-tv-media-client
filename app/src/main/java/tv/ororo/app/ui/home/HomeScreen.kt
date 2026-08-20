@@ -17,13 +17,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Cached
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -74,23 +75,15 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
-    val moviesFocusRequester = remember { FocusRequester() }
-    val continueWatchingFocusRequester = remember { FocusRequester() }
-    var initialFocusApplied by remember { mutableStateOf(false) }
+    val searchFocusRequester = remember { FocusRequester() }
     var showSettings by remember { mutableStateOf(false) }
-    var showClearConfirmation by remember { mutableStateOf(false) }
+    var showClearHistoryConfirmation by remember { mutableStateOf(false) }
+    var showClearCacheConfirmation by remember { mutableStateOf(false) }
 
-    LaunchedEffect(uiState.isLoadingContinueWatching, uiState.continueWatching.size) {
-        if (!uiState.isLoadingContinueWatching && !initialFocusApplied) {
-            try {
-                if (uiState.continueWatching.isNotEmpty()) {
-                    continueWatchingFocusRequester.requestFocus()
-                } else {
-                    moviesFocusRequester.requestFocus()
-                }
-                initialFocusApplied = true
-            } catch (_: Exception) {
-            }
+    LaunchedEffect(Unit) {
+        try {
+            searchFocusRequester.requestFocus()
+        } catch (_: Exception) {
         }
     }
 
@@ -105,9 +98,13 @@ fun HomeScreen(
                 .verticalScroll(rememberScrollState())
         ) {
             HomeHeader(
-                onSearchClick = onSearchClick,
                 onSettingsClick = { showSettings = true }
             )
+            PrimarySearchCard(
+                onClick = onSearchClick,
+                modifier = Modifier.focusRequester(searchFocusRequester)
+            )
+            Spacer(modifier = Modifier.height(24.dp))
 
             if (uiState.isLoadingContinueWatching) {
                 Row(
@@ -125,8 +122,7 @@ fun HomeScreen(
             } else if (uiState.continueWatching.isNotEmpty()) {
                 ContinueWatchingRow(
                     items = uiState.continueWatching,
-                    onContinueWatchingClick = onContinueWatchingClick,
-                    firstItemFocusRequester = continueWatchingFocusRequester
+                    onContinueWatchingClick = onContinueWatchingClick
                 )
                 Spacer(modifier = Modifier.height(24.dp))
             }
@@ -134,8 +130,7 @@ fun HomeScreen(
             BrowseRow(
                 onMoviesClick = onMoviesClick,
                 onShowsClick = onShowsClick,
-                onSavedClick = onSavedClick,
-                moviesFocusRequester = moviesFocusRequester
+                onSavedClick = onSavedClick
             )
             Spacer(modifier = Modifier.height(32.dp))
         }
@@ -143,9 +138,13 @@ fun HomeScreen(
 
     if (showSettings) {
         SettingsDialog(
-            onClearData = {
+            onClearWatchHistory = {
                 showSettings = false
-                showClearConfirmation = true
+                showClearHistoryConfirmation = true
+            },
+            onClearCache = {
+                showSettings = false
+                showClearCacheConfirmation = true
             },
             onLogout = {
                 showSettings = false
@@ -158,28 +157,58 @@ fun HomeScreen(
         )
     }
 
-    if (showClearConfirmation) {
+    if (showClearHistoryConfirmation) {
         AlertDialog(
-            onDismissRequest = { showClearConfirmation = false },
-            title = { Text("Clear watch history & cache?") },
+            onDismissRequest = { showClearHistoryConfirmation = false },
+            title = { Text("Clear watch history?") },
             text = {
-                Text("Your saved movies and shows will not be removed.")
+                Text("This removes watched status and resume positions. Your saved movies and shows will not be removed.")
             },
             confirmButton = {
                 TvActionButton(
-                    text = "Clear data",
-                    icon = Icons.Default.Cached,
+                    text = "Clear history",
+                    icon = Icons.Default.History,
                     primary = true,
                     onClick = {
-                        viewModel.clearLocalData()
-                        showClearConfirmation = false
+                        viewModel.clearWatchHistory()
+                        showClearHistoryConfirmation = false
                     }
                 )
             },
             dismissButton = {
                 TvActionButton(
                     text = "Cancel",
-                    onClick = { showClearConfirmation = false }
+                    onClick = { showClearHistoryConfirmation = false }
+                )
+            },
+            containerColor = OroroColors.SurfaceRaised,
+            titleContentColor = OroroColors.TextPrimary,
+            textContentColor = OroroColors.TextSecondary
+        )
+    }
+
+    if (showClearCacheConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showClearCacheConfirmation = false },
+            title = { Text("Clear cache?") },
+            text = {
+                Text("This removes cached posters and temporary catalog data. Your watch history, saved titles, and login will not be removed.")
+            },
+            confirmButton = {
+                TvActionButton(
+                    text = "Clear cache",
+                    icon = Icons.Default.Cached,
+                    primary = true,
+                    onClick = {
+                        viewModel.clearCache()
+                        showClearCacheConfirmation = false
+                    }
+                )
+            },
+            dismissButton = {
+                TvActionButton(
+                    text = "Cancel",
+                    onClick = { showClearCacheConfirmation = false }
                 )
             },
             containerColor = OroroColors.SurfaceRaised,
@@ -191,7 +220,6 @@ fun HomeScreen(
 
 @Composable
 private fun HomeHeader(
-    onSearchClick: () -> Unit,
     onSettingsClick: () -> Unit
 ) {
     Row(
@@ -216,12 +244,6 @@ private fun HomeHeader(
         )
         Spacer(modifier = Modifier.weight(1f))
         TvActionButton(
-            text = "Search",
-            icon = Icons.Default.Search,
-            onClick = onSearchClick
-        )
-        Spacer(modifier = Modifier.width(12.dp))
-        TvActionButton(
             text = "Settings",
             icon = Icons.Default.Settings,
             onClick = onSettingsClick
@@ -230,10 +252,65 @@ private fun HomeHeader(
 }
 
 @Composable
+private fun PrimarySearchCard(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+    val shape = OroroShapes.Medium
+
+    Surface(
+        onClick = onClick,
+        modifier = modifier
+            .padding(horizontal = OroroDimens.HomeHorizontalPadding)
+            .fillMaxWidth()
+            .height(112.dp)
+            .zIndex(if (isFocused) 1f else 0f),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = OroroColors.Surface,
+            focusedContainerColor = OroroColors.Surface,
+            pressedContainerColor = OroroColors.Surface
+        ),
+        shape = ClickableSurfaceDefaults.shape(shape = shape),
+        scale = OroroFocusDefaults.scale(),
+        border = OroroFocusDefaults.border(shape),
+        interactionSource = interactionSource
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 28.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Search,
+                contentDescription = null,
+                tint = OroroColors.FocusRing,
+                modifier = Modifier.size(42.dp)
+            )
+            Spacer(modifier = Modifier.width(20.dp))
+            Column {
+                Text(
+                    text = "Search",
+                    color = OroroColors.TextPrimary,
+                    fontSize = 24.sp
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Find any movie or TV show",
+                    color = OroroColors.TextSecondary,
+                    fontSize = 14.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun ContinueWatchingRow(
     items: List<ContinueWatchingItem>,
-    onContinueWatchingClick: (String, Int) -> Unit,
-    firstItemFocusRequester: FocusRequester
+    onContinueWatchingClick: (String, Int) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         SectionTitle("Continue Watching")
@@ -242,15 +319,10 @@ private fun ContinueWatchingRow(
             contentPadding = PaddingValues(horizontal = OroroDimens.HomeHorizontalPadding),
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            itemsIndexed(
+            items(
                 items = items,
-                key = { _, item -> "${item.contentType}:${item.contentId}" }
-            ) { index, item ->
-                val cardModifier = if (index == 0) {
-                    Modifier.focusRequester(firstItemFocusRequester)
-                } else {
-                    Modifier
-                }
+                key = { item -> "${item.contentType}:${item.contentId}" }
+            ) { item ->
                 Column(modifier = Modifier.width(160.dp)) {
                     ContentCard(
                         title = item.title,
@@ -258,8 +330,7 @@ private fun ContinueWatchingRow(
                         year = item.year,
                         rating = item.rating,
                         progressPercent = item.progressPercent,
-                        onClick = { onContinueWatchingClick(item.contentType, item.contentId) },
-                        modifier = cardModifier
+                        onClick = { onContinueWatchingClick(item.contentType, item.contentId) }
                     )
                     if (!item.subtitle.isNullOrBlank()) {
                         Spacer(modifier = Modifier.height(6.dp))
@@ -280,8 +351,7 @@ private fun ContinueWatchingRow(
 private fun BrowseRow(
     onMoviesClick: () -> Unit,
     onShowsClick: () -> Unit,
-    onSavedClick: () -> Unit,
-    moviesFocusRequester: FocusRequester
+    onSavedClick: () -> Unit
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         SectionTitle("Browse")
@@ -293,8 +363,7 @@ private fun BrowseRow(
             HomeCard(
                 title = "Movies",
                 icon = Icons.Default.Movie,
-                onClick = onMoviesClick,
-                modifier = Modifier.focusRequester(moviesFocusRequester)
+                onClick = onMoviesClick
             )
             HomeCard(
                 title = "TV Shows",
@@ -373,7 +442,8 @@ private fun HomeCard(
 
 @Composable
 private fun SettingsDialog(
-    onClearData: () -> Unit,
+    onClearWatchHistory: () -> Unit,
+    onClearCache: () -> Unit,
     onLogout: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -389,12 +459,18 @@ private fun SettingsDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 TvActionButton(
-                    text = "Clear watch history & cache",
-                    icon = Icons.Default.Cached,
-                    onClick = onClearData,
+                    text = "Clear watch history",
+                    icon = Icons.Default.History,
+                    onClick = onClearWatchHistory,
                     modifier = Modifier
                         .fillMaxWidth()
                         .focusRequester(firstOptionFocusRequester)
+                )
+                TvActionButton(
+                    text = "Clear cache",
+                    icon = Icons.Default.Cached,
+                    onClick = onClearCache,
+                    modifier = Modifier.fillMaxWidth()
                 )
                 TvActionButton(
                     text = "Sign out",

@@ -1,13 +1,19 @@
 package tv.ororo.app.ui.home
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import coil.annotation.ExperimentalCoilApi
+import coil.imageLoader
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import tv.ororo.app.data.domain.model.EpisodeDetail
 import tv.ororo.app.data.domain.model.Movie
 import tv.ororo.app.data.repository.OroroRepository
@@ -34,6 +40,7 @@ data class HomeUiState(
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val sessionRepository: SessionRepository,
     private val ororoRepository: OroroRepository,
     private val watchProgressRepository: WatchProgressRepository
@@ -53,11 +60,21 @@ class HomeViewModel @Inject constructor(
         ororoRepository.clearCache()
     }
 
-    fun clearLocalData() {
+    fun clearWatchHistory() {
         viewModelScope.launch {
             watchProgressRepository.clearAllProgress()
+        }
+    }
+
+    @OptIn(ExperimentalCoilApi::class)
+    fun clearCache() {
+        viewModelScope.launch {
             ororoRepository.clearCache()
             episodeMetadataCache.clear()
+            context.imageLoader.memoryCache?.clear()
+            withContext(Dispatchers.IO) {
+                context.imageLoader.diskCache?.clear()
+            }
         }
     }
 

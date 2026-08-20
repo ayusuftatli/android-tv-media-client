@@ -15,6 +15,8 @@ import tv.ororo.app.ui.saved.SavedScreen
 import tv.ororo.app.ui.search.SearchScreen
 import tv.ororo.app.ui.shows.ShowBrowseScreen
 import tv.ororo.app.ui.shows.ShowDetailScreen
+import tv.ororo.app.ui.trending.TrendingMoviesScreen
+import tv.ororo.app.ui.trending.TrendingShowsScreen
 
 @Composable
 fun AppNavHost(
@@ -37,6 +39,8 @@ fun AppNavHost(
                 onMoviesClick = { navController.navigate(Screen.MovieBrowse.route) },
                 onShowsClick = { navController.navigate(Screen.ShowBrowse.route) },
                 onSavedClick = { navController.navigate(Screen.Saved.route) },
+                onTrendingMoviesClick = { navController.navigate(Screen.TrendingMovies.route) },
+                onTrendingShowsClick = { navController.navigate(Screen.TrendingShows.route) },
                 onSearchClick = { navController.navigate(Screen.Search.route) },
                 onContinueWatchingClick = { type, id ->
                     navController.navigate(Screen.Player.createRoute(type, id))
@@ -136,6 +140,24 @@ fun AppNavHost(
                         popUpTo(backStackEntry.destination.id) { inclusive = true }
                     }
                 }
+            )
+        }
+
+        composable(Screen.TrendingMovies.route) {
+            TrendingMoviesScreen(
+                onMovieClick = { movieId ->
+                    navController.navigate(Screen.MovieDetail.createRoute(movieId))
+                },
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.TrendingShows.route) {
+            TrendingShowsScreen(
+                onShowClick = { showId ->
+                    navController.navigate(Screen.ShowDetail.createRoute(showId))
+                },
+                onBack = { navController.popBackStack() }
             )
         }
     }

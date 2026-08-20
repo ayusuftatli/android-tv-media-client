@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -19,6 +20,20 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.3"
+
+        val localProperties = Properties().apply {
+            val propertiesFile = rootProject.file("local.properties")
+            if (propertiesFile.exists()) {
+                propertiesFile.inputStream().use(::load)
+            }
+        }
+        val tmdbReadAccessToken = providers.environmentVariable("TMDB_READ_ACCESS_TOKEN").orNull
+            ?: providers.gradleProperty("TMDB_READ_ACCESS_TOKEN").orNull
+            ?: localProperties.getProperty("TMDB_READ_ACCESS_TOKEN", "")
+        val escapedTmdbToken = tmdbReadAccessToken
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+        buildConfigField("String", "TMDB_READ_ACCESS_TOKEN", "\"$escapedTmdbToken\"")
     }
 
     buildTypes {
@@ -44,6 +59,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -84,6 +100,7 @@ dependencies {
 
     // Coil for Compose
     implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("io.coil-kt:coil-svg:2.7.0")
 
     // DataStore
     implementation("androidx.datastore:datastore-preferences:1.1.1")
@@ -101,4 +118,5 @@ dependencies {
     // Test
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 }

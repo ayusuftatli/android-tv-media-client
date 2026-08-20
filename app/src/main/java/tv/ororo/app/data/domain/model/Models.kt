@@ -4,6 +4,7 @@ data class Movie(
     val id: Int,
     val name: String,
     val year: Int?,
+    val imdbId: String?,
     val posterUrl: String?,
     val backdropUrl: String?,
     val imdbRating: Double?,
@@ -25,10 +26,33 @@ data class MovieDetail(
     val subtitles: List<Subtitle>
 )
 
+data class TrendingMovie(
+    val rank: Int,
+    val movie: Movie
+)
+
+data class TrendingMoviesResult(
+    val movies: List<TrendingMovie>,
+    val rankedMovieCount: Int,
+    val isStale: Boolean
+)
+
+data class TrendingShow(
+    val rank: Int,
+    val show: Show
+)
+
+data class TrendingShowsResult(
+    val shows: List<TrendingShow>,
+    val rankedShowCount: Int,
+    val isStale: Boolean
+)
+
 data class Show(
     val id: Int,
     val name: String,
     val year: Int?,
+    val imdbId: String?,
     val posterUrl: String?,
     val backdropUrl: String?,
     val imdbRating: Double?,

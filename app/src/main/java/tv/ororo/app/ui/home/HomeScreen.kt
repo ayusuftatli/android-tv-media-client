@@ -22,9 +22,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Cached
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -47,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -55,6 +58,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import kotlinx.coroutines.launch
+import coil.compose.AsyncImage
 import tv.ororo.app.R
 import tv.ororo.app.ui.components.ContentCard
 import tv.ororo.app.ui.components.TvActionButton
@@ -68,6 +72,8 @@ fun HomeScreen(
     onMoviesClick: () -> Unit,
     onShowsClick: () -> Unit,
     onSavedClick: () -> Unit,
+    onTrendingMoviesClick: () -> Unit,
+    onTrendingShowsClick: () -> Unit,
     onSearchClick: () -> Unit,
     onContinueWatchingClick: (String, Int) -> Unit,
     onLogout: () -> Unit,
@@ -77,6 +83,7 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
     val searchFocusRequester = remember { FocusRequester() }
     var showSettings by remember { mutableStateOf(false) }
+    var showAbout by remember { mutableStateOf(false) }
     var showClearHistoryConfirmation by remember { mutableStateOf(false) }
     var showClearCacheConfirmation by remember { mutableStateOf(false) }
 
@@ -130,7 +137,9 @@ fun HomeScreen(
             BrowseRow(
                 onMoviesClick = onMoviesClick,
                 onShowsClick = onShowsClick,
-                onSavedClick = onSavedClick
+                onSavedClick = onSavedClick,
+                onTrendingMoviesClick = onTrendingMoviesClick,
+                onTrendingShowsClick = onTrendingShowsClick
             )
             Spacer(modifier = Modifier.height(32.dp))
         }
@@ -146,6 +155,10 @@ fun HomeScreen(
                 showSettings = false
                 showClearCacheConfirmation = true
             },
+            onAbout = {
+                showSettings = false
+                showAbout = true
+            },
             onLogout = {
                 showSettings = false
                 scope.launch {
@@ -155,6 +168,10 @@ fun HomeScreen(
             },
             onDismiss = { showSettings = false }
         )
+    }
+
+    if (showAbout) {
+        AboutAndAttributionDialog(onDismiss = { showAbout = false })
     }
 
     if (showClearHistoryConfirmation) {
@@ -351,30 +368,52 @@ private fun ContinueWatchingRow(
 private fun BrowseRow(
     onMoviesClick: () -> Unit,
     onShowsClick: () -> Unit,
-    onSavedClick: () -> Unit
+    onSavedClick: () -> Unit,
+    onTrendingMoviesClick: () -> Unit,
+    onTrendingShowsClick: () -> Unit
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         SectionTitle("Browse")
         Spacer(modifier = Modifier.height(10.dp))
-        Row(
-            modifier = Modifier.padding(horizontal = OroroDimens.HomeHorizontalPadding),
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = OroroDimens.HomeHorizontalPadding),
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            HomeCard(
-                title = "Movies",
-                icon = Icons.Default.Movie,
-                onClick = onMoviesClick
-            )
-            HomeCard(
-                title = "TV Shows",
-                icon = Icons.Default.Tv,
-                onClick = onShowsClick
-            )
-            HomeCard(
-                title = "Saved",
-                icon = Icons.Default.Bookmark,
-                onClick = onSavedClick
-            )
+            item {
+                HomeCard(
+                    title = "Movies",
+                    icon = Icons.Default.Movie,
+                    onClick = onMoviesClick
+                )
+            }
+            item {
+                HomeCard(
+                    title = "TV Shows",
+                    icon = Icons.Default.Tv,
+                    onClick = onShowsClick
+                )
+            }
+            item {
+                HomeCard(
+                    title = "Saved",
+                    icon = Icons.Default.Bookmark,
+                    onClick = onSavedClick
+                )
+            }
+            item {
+                HomeCard(
+                    title = "Trending Movies",
+                    icon = Icons.AutoMirrored.Filled.TrendingUp,
+                    onClick = onTrendingMoviesClick
+                )
+            }
+            item {
+                HomeCard(
+                    title = "Trending TV",
+                    icon = Icons.AutoMirrored.Filled.TrendingUp,
+                    onClick = onTrendingShowsClick
+                )
+            }
         }
     }
 }
@@ -444,6 +483,7 @@ private fun HomeCard(
 private fun SettingsDialog(
     onClearWatchHistory: () -> Unit,
     onClearCache: () -> Unit,
+    onAbout: () -> Unit,
     onLogout: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -473,10 +513,55 @@ private fun SettingsDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
                 TvActionButton(
+                    text = "About & data attribution",
+                    icon = Icons.Default.Info,
+                    onClick = onAbout,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                TvActionButton(
                     text = "Sign out",
                     icon = Icons.AutoMirrored.Filled.Logout,
                     onClick = onLogout,
                     modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close", color = OroroColors.Accent)
+            }
+        },
+        containerColor = OroroColors.SurfaceRaised,
+        titleContentColor = OroroColors.TextPrimary,
+        textContentColor = OroroColors.TextSecondary
+    )
+}
+
+@Composable
+private fun AboutAndAttributionDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("About & data attribution") },
+        text = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                AsyncImage(
+                    model = R.raw.tmdb_logo,
+                    contentDescription = "The Movie Database logo",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.size(width = 120.dp, height = 86.dp)
+                )
+                Text(
+                    text = "Weekly trending data is provided by TMDB.",
+                    color = OroroColors.TextPrimary,
+                    fontSize = 15.sp
+                )
+                Text(
+                    text = "This product uses the TMDB API but is not endorsed or certified by TMDB.",
+                    color = OroroColors.TextSecondary,
+                    fontSize = 14.sp
                 )
             }
         },

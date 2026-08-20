@@ -44,7 +44,8 @@ fun ContentCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     isWatched: Boolean = false,
-    progressPercent: Int? = null
+    progressPercent: Int? = null,
+    badgeText: String? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
@@ -93,6 +94,22 @@ fun ContentCard(
                         .height(220.dp),
                     contentScale = ContentScale.Crop
                 )
+                if (!badgeText.isNullOrBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(8.dp)
+                            .background(OroroColors.Accent, RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = badgeText,
+                            color = OroroColors.TextPrimary,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
                 if (isWatched) {
                     Box(
                         modifier = Modifier

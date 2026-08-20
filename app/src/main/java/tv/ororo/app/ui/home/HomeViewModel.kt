@@ -18,6 +18,8 @@ import tv.ororo.app.data.domain.model.EpisodeDetail
 import tv.ororo.app.data.domain.model.Movie
 import tv.ororo.app.data.repository.OroroRepository
 import tv.ororo.app.data.repository.SessionRepository
+import tv.ororo.app.data.repository.TrendingMoviesRepository
+import tv.ororo.app.data.repository.TrendingShowsRepository
 import tv.ororo.app.data.repository.WatchProgressRepository
 import javax.inject.Inject
 
@@ -43,6 +45,8 @@ class HomeViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val sessionRepository: SessionRepository,
     private val ororoRepository: OroroRepository,
+    private val trendingMoviesRepository: TrendingMoviesRepository,
+    private val trendingShowsRepository: TrendingShowsRepository,
     private val watchProgressRepository: WatchProgressRepository
 ) : ViewModel() {
 
@@ -70,6 +74,8 @@ class HomeViewModel @Inject constructor(
     fun clearCache() {
         viewModelScope.launch {
             ororoRepository.clearCache()
+            trendingMoviesRepository.clearCache()
+            trendingShowsRepository.clearCache()
             episodeMetadataCache.clear()
             context.imageLoader.memoryCache?.clear()
             withContext(Dispatchers.IO) {

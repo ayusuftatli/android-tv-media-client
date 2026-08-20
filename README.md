@@ -5,11 +5,31 @@ Android TV application built with Kotlin and Jetpack Compose for TV, designed fo
 ## Features
 - TV-first UI with D-pad navigation
 - Save movies and TV shows for quick access
+- Weekly TMDB top-100 movies and TV series filtered to titles available on Ororo
 - Media playback with AndroidX Media3 (ExoPlayer)
 - HLS playback support
 - Dependency injection with Hilt
 - Network stack with Retrofit + OkHttp
 - Local preferences with DataStore
+
+## TMDB setup
+
+The Trending Movies and Trending TV screens use TMDB's API Read Access Token. Create an API
+credential in your TMDB account, then add the token to the untracked
+`local.properties` file:
+
+```properties
+TMDB_READ_ACCESS_TOKEN=your_api_read_access_token
+```
+
+For automated builds, set the `TMDB_READ_ACCESS_TOKEN` environment variable
+instead. The first visit to each section resolves its weekly top 100 to Ororo's
+IMDb IDs. Movie and TV results are cached separately for 24 hours and are cleared
+by the app's **Clear cache** action.
+
+TMDB attribution and its approved logo are available under **Settings → About &
+data attribution**. The logo asset is the unmodified TMDB primary logo published
+on TMDB's official logos and attribution page.
 
 ## Tech Stack
 - Kotlin (JVM 17)

@@ -6,6 +6,8 @@ sealed class Screen(val route: String) {
     data object Saved : Screen("saved")
     data object MovieBrowse : Screen("movies")
     data object ShowBrowse : Screen("shows")
+    data object TrendingMovies : Screen("trending-movies")
+    data object TrendingShows : Screen("trending-shows")
     data object MovieDetail : Screen("movie/{movieId}") {
         fun createRoute(movieId: Int) = "movie/$movieId"
     }

@@ -10,9 +10,11 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
+import tv.ororo.app.BuildConfig
 import tv.ororo.app.data.api.AuthInterceptor
 import tv.ororo.app.data.api.HttpStatusInterceptor
 import tv.ororo.app.data.api.OroroApi
+import tv.ororo.app.data.api.TmdbApi
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 
@@ -61,5 +63,35 @@ object AppModule {
     @Singleton
     fun provideOroroApi(retrofit: Retrofit): OroroApi {
         return retrofit.create(OroroApi::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideTmdbApi(json: Json): TmdbApi {
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val request = chain.request().newBuilder()
+                    .addHeader("Accept", "application/json")
+                    .apply {
+                        if (BuildConfig.TMDB_READ_ACCESS_TOKEN.isNotBlank()) {
+                            addHeader(
+                                "Authorization",
+                                "Bearer ${BuildConfig.TMDB_READ_ACCESS_TOKEN}"
+                            )
+                        }
+                    }
+                    .build()
+                chain.proceed(request)
+            }
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build()
+
+        return Retrofit.Builder()
+            .baseUrl("https://api.themoviedb.org/3/")
+            .client(client)
+            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+            .build()
+            .create(TmdbApi::class.java)
     }
 }

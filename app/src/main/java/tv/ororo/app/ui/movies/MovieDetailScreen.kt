@@ -16,13 +16,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
+import tv.ororo.app.ui.components.TvActionButton
+import tv.ororo.app.ui.theme.OroroColors
 
 @Composable
 fun MovieDetailScreen(
@@ -36,27 +36,38 @@ fun MovieDetailScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF1a1a2e))
+            .background(OroroColors.Background)
     ) {
         when {
             uiState.isLoading -> {
                 CircularProgressIndicator(
-                    color = Color(0xFF6C63FF),
+                    color = OroroColors.Accent,
                     modifier = Modifier.align(Alignment.Center)
                 )
             }
             uiState.error != null -> {
-                Text(
-                    text = uiState.error!!,
-                    color = Color(0xFFFF6B6B),
-                    modifier = Modifier.align(Alignment.Center)
-                )
+                Column(
+                    modifier = Modifier.align(Alignment.Center),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = uiState.error!!,
+                        color = OroroColors.Error
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    TvActionButton(
+                        text = "Retry",
+                        primary = true,
+                        onClick = viewModel::retry
+                    )
+                }
             }
             uiState.movie != null -> {
                 val movie = uiState.movie!!
                 MovieDetailContent(
                     movie = movie,
                     isSaved = uiState.isSaved,
+                    playbackLabel = moviePlaybackLabel(uiState.watchState),
                     onPlayClick = onPlayClick,
                     onSaveClick = viewModel::toggleSaved
                 )
@@ -69,6 +80,7 @@ fun MovieDetailScreen(
 private fun MovieDetailContent(
     movie: tv.ororo.app.data.domain.model.MovieDetail,
     isSaved: Boolean,
+    playbackLabel: String,
     onPlayClick: () -> Unit,
     onSaveClick: () -> Unit
 ) {
@@ -83,7 +95,7 @@ private fun MovieDetailContent(
             contentDescription = movie.name,
             modifier = Modifier
                 .width(250.dp)
-                .fillMaxHeight()
+                .height(375.dp)
                 .clip(RoundedCornerShape(12.dp)),
             contentScale = ContentScale.Crop
         )
@@ -98,7 +110,7 @@ private fun MovieDetailContent(
         ) {
             Text(
                 text = movie.name,
-                color = Color.White,
+                color = OroroColors.TextPrimary,
                 fontSize = 28.sp
             )
 
@@ -106,12 +118,12 @@ private fun MovieDetailContent(
 
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 if (movie.year != null) {
-                    Text(text = movie.year.toString(), color = Color.Gray, fontSize = 16.sp)
+                    Text(text = movie.year.toString(), color = OroroColors.TextMuted, fontSize = 16.sp)
                 }
                 if (movie.imdbRating != null && movie.imdbRating > 0) {
                     Text(
                         text = "★ ${"%.1f".format(movie.imdbRating)}",
-                        color = Color(0xFFFFD700),
+                        color = OroroColors.Rating,
                         fontSize = 16.sp
                     )
                 }
@@ -121,7 +133,7 @@ private fun MovieDetailContent(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = movie.genres.joinToString(" · "),
-                    color = Color(0xFF6C63FF),
+                    color = OroroColors.Accent,
                     fontSize = 14.sp
                 )
             }
@@ -129,30 +141,22 @@ private fun MovieDetailContent(
             Spacer(modifier = Modifier.height(20.dp))
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(
+                TvActionButton(
+                    text = playbackLabel,
                     onClick = onPlayClick,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6C63FF)),
+                    icon = Icons.Default.PlayArrow,
+                    primary = true,
                     modifier = Modifier.height(48.dp)
-                ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Play", fontSize = 16.sp)
-                }
+                )
 
-                Button(
+                TvActionButton(
+                    text = if (isSaved) "Saved" else "Save",
                     onClick = onSaveClick,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isSaved) Color(0xFF2E7D32) else Color(0xFF3A3A50)
-                    ),
+                    icon = if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                    selected = isSaved,
+                    containerColor = if (isSaved) OroroColors.SuccessStrong else null,
                     modifier = Modifier.height(48.dp)
-                ) {
-                    Icon(
-                        imageVector = if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                        contentDescription = null
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(if (isSaved) "Saved" else "Save", fontSize = 16.sp)
-                }
+                )
             }
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -160,7 +164,7 @@ private fun MovieDetailContent(
             if (!movie.description.isNullOrBlank()) {
                 Text(
                     text = movie.description,
-                    color = Color(0xFFB0B0B0),
+                    color = OroroColors.TextSecondary,
                     fontSize = 14.sp,
                     lineHeight = 22.sp
                 )
@@ -170,7 +174,7 @@ private fun MovieDetailContent(
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
                     text = "Subtitles: ${movie.subtitles.joinToString(", ") { it.lang }}",
-                    color = Color.Gray,
+                    color = OroroColors.TextMuted,
                     fontSize = 12.sp
                 )
             }

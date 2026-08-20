@@ -57,6 +57,7 @@ fun AppNavHost(
                 onShowClick = { showId ->
                     navController.navigate(Screen.ShowDetail.createRoute(showId))
                 },
+                onBrowseMovies = { navController.navigate(Screen.MovieBrowse.route) },
                 onBack = { navController.popBackStack() }
             )
         }

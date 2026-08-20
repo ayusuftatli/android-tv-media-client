@@ -17,6 +17,7 @@ import tv.ororo.app.data.repository.OroroRepository
 import tv.ororo.app.data.repository.SavedContentRepository
 import tv.ororo.app.data.repository.SessionRepository
 import tv.ororo.app.data.repository.WatchProgressRepository
+import tv.ororo.app.data.repository.WatchState
 import javax.inject.Inject
 
 data class ShowDetailUiState(
@@ -24,6 +25,7 @@ data class ShowDetailUiState(
     val selectedSeason: Int = 1,
     val seasonEpisodes: List<Episode> = emptyList(),
     val watchedEpisodeIds: Set<Int> = emptySet(),
+    val resumeEpisode: Episode? = null,
     val isSaved: Boolean = false,
     val isLoading: Boolean = false,
     val error: String? = null
@@ -43,6 +45,7 @@ class ShowDetailViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(ShowDetailUiState())
     val uiState: StateFlow<ShowDetailUiState> = _uiState.asStateFlow()
+    private var episodeWatchStatesById: Map<Int, WatchState> = emptyMap()
 
     init {
         observeWatchStates()
@@ -53,11 +56,21 @@ class ShowDetailViewModel @Inject constructor(
     private fun observeWatchStates() {
         viewModelScope.launch {
             watchProgressRepository.watchStatesFlow().collect { states ->
-                val watchedEpisodeIds = states.values
-                    .filter { it.completed && it.contentKey.startsWith("episode:") }
-                    .mapNotNull { it.contentKey.substringAfter("episode:").toIntOrNull() }
-                    .toSet()
-                _uiState.value = _uiState.value.copy(watchedEpisodeIds = watchedEpisodeIds)
+                episodeWatchStatesById = states.values.mapNotNull { state ->
+                    val (type, id) = WatchProgressRepository.parseContentKey(state.contentKey)
+                        ?: return@mapNotNull null
+                    if (type.lowercase() != "episode") return@mapNotNull null
+                    id to state
+                }.toMap()
+                val show = _uiState.value.show
+                _uiState.value = _uiState.value.copy(
+                    watchedEpisodeIds = episodeWatchStatesById
+                        .filterValues(WatchState::completed)
+                        .keys,
+                    resumeEpisode = show?.let { detail ->
+                        findResumeEpisode(detail.episodes, episodeWatchStatesById)
+                    }
+                )
             }
         }
     }
@@ -68,6 +81,10 @@ class ShowDetailViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(isSaved = isSaved)
             }
         }
+    }
+
+    fun retry() {
+        loadShow()
     }
 
     private fun loadShow() {
@@ -82,6 +99,7 @@ class ShowDetailViewModel @Inject constructor(
                     selectedSeason = firstSeason,
                     seasonEpisodes = show.episodes.filter { it.season == firstSeason }
                         .sortedBy { it.number },
+                    resumeEpisode = findResumeEpisode(show.episodes, episodeWatchStatesById),
                     isLoading = false,
                     error = null
                 )
@@ -121,4 +139,24 @@ class ShowDetailViewModel @Inject constructor(
             savedContentRepository.toggleSaved(SavedContentRepository.TYPE_SHOW, showId)
         }
     }
+}
+
+internal fun findResumeEpisode(
+    episodes: List<Episode>,
+    watchStatesByEpisodeId: Map<Int, WatchState>
+): Episode? {
+    return episodes
+        .mapNotNull { episode ->
+            val state = watchStatesByEpisodeId[episode.id] ?: return@mapNotNull null
+            if (state.completed || state.positionMs <= 0L || state.durationMs <= 0L) {
+                return@mapNotNull null
+            }
+            episode to state.updatedAt
+        }
+        .maxByOrNull { (_, updatedAt) -> updatedAt }
+        ?.first
+}
+
+internal fun formatEpisodeCode(episode: Episode): String {
+    return "S%02dE%02d".format(episode.season, episode.number)
 }

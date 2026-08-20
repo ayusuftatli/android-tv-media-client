@@ -15,11 +15,14 @@ import tv.ororo.app.data.domain.model.MovieDetail
 import tv.ororo.app.data.repository.OroroRepository
 import tv.ororo.app.data.repository.SavedContentRepository
 import tv.ororo.app.data.repository.SessionRepository
+import tv.ororo.app.data.repository.WatchProgressRepository
+import tv.ororo.app.data.repository.WatchState
 import javax.inject.Inject
 
 data class MovieDetailUiState(
     val movie: MovieDetail? = null,
     val isSaved: Boolean = false,
+    val watchState: WatchState? = null,
     val isLoading: Boolean = false,
     val error: String? = null
 )
@@ -30,6 +33,7 @@ class MovieDetailViewModel @Inject constructor(
     private val repository: OroroRepository,
     private val sessionRepository: SessionRepository,
     private val savedContentRepository: SavedContentRepository,
+    private val watchProgressRepository: WatchProgressRepository,
     private val authEventBus: AuthEventBus
 ) : ViewModel() {
 
@@ -40,6 +44,7 @@ class MovieDetailViewModel @Inject constructor(
 
     init {
         observeSavedState()
+        observeWatchState()
         loadMovie()
     }
 
@@ -49,6 +54,19 @@ class MovieDetailViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(isSaved = isSaved)
             }
         }
+    }
+
+    private fun observeWatchState() {
+        viewModelScope.launch {
+            watchProgressRepository.watchStatesFlow().collect { states ->
+                val contentKey = WatchProgressRepository.contentKey("movie", movieId)
+                _uiState.value = _uiState.value.copy(watchState = states[contentKey])
+            }
+        }
+    }
+
+    fun retry() {
+        loadMovie()
     }
 
     private fun loadMovie() {
@@ -86,5 +104,14 @@ class MovieDetailViewModel @Inject constructor(
         viewModelScope.launch {
             savedContentRepository.toggleSaved(SavedContentRepository.TYPE_MOVIE, movieId)
         }
+    }
+}
+
+internal fun moviePlaybackLabel(watchState: WatchState?): String {
+    return when {
+        watchState == null -> "Play"
+        watchState.completed -> "Play again"
+        watchState.positionMs > 0L && watchState.durationMs > 0L -> "Resume"
+        else -> "Play"
     }
 }

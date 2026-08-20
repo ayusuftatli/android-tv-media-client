@@ -2,10 +2,12 @@ package tv.ororo.app.ui.home
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -23,10 +26,13 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Cached
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -39,17 +45,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import kotlinx.coroutines.launch
 import tv.ororo.app.R
 import tv.ororo.app.ui.components.ContentCard
+import tv.ororo.app.ui.components.TvActionButton
+import tv.ororo.app.ui.theme.OroroColors
+import tv.ororo.app.ui.theme.OroroDimens
+import tv.ororo.app.ui.theme.OroroFocusDefaults
+import tv.ororo.app.ui.theme.OroroShapes
 
 @Composable
 fun HomeScreen(
@@ -63,113 +74,158 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
-    val searchFocusRequester = remember { FocusRequester() }
+    val moviesFocusRequester = remember { FocusRequester() }
     val continueWatchingFocusRequester = remember { FocusRequester() }
     var initialFocusApplied by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+    var showClearConfirmation by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        if (initialFocusApplied) return@LaunchedEffect
-        val initialFocusTarget = searchFocusRequester
-        try {
-            initialFocusTarget.requestFocus()
-            initialFocusApplied = true
-        } catch (_: Exception) {
+    LaunchedEffect(uiState.isLoadingContinueWatching, uiState.continueWatching.size) {
+        if (!uiState.isLoadingContinueWatching && !initialFocusApplied) {
+            try {
+                if (uiState.continueWatching.isNotEmpty()) {
+                    continueWatchingFocusRequester.requestFocus()
+                } else {
+                    moviesFocusRequester.requestFocus()
+                }
+                initialFocusApplied = true
+            } catch (_: Exception) {
+            }
         }
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF1a1a2e))
+            .background(OroroColors.Background)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .verticalScroll(rememberScrollState())
         ) {
-            Spacer(modifier = Modifier.height(32.dp))
-
-            Image(
-                painter = painterResource(id = R.drawable.ororo_logo),
-                contentDescription = "Ororo TV logo",
-                modifier = Modifier.size(88.dp)
+            HomeHeader(
+                onSearchClick = onSearchClick,
+                onSettingsClick = { showSettings = true }
             )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Text(
-                text = "Ororo TV",
-                fontSize = 32.sp,
-                color = Color.White
-            )
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 80.dp),
-                horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally)
-            ) {
-                HomeCard(
-                    title = "Search",
-                    icon = Icons.Default.Search,
-                    onClick = onSearchClick,
-                    focusRequester = searchFocusRequester,
-                    modifier = Modifier.weight(1f)
-                )
-                HomeCard(
-                    title = "Movies",
-                    icon = Icons.Default.Movie,
-                    onClick = onMoviesClick,
-                    modifier = Modifier.weight(1f)
-                )
-                HomeCard(
-                    title = "Saved",
-                    icon = Icons.Default.Bookmark,
-                    onClick = onSavedClick,
-                    modifier = Modifier.weight(1f)
-                )
-                HomeCard(
-                    title = "TV Shows",
-                    icon = Icons.Default.Tv,
-                    onClick = onShowsClick,
-                    modifier = Modifier.weight(1f)
-                )
-                HomeCard(
-                    title = "Clear Data",
-                    icon = Icons.Default.Cached,
-                    onClick = { viewModel.clearLocalData() },
-                    modifier = Modifier.weight(1f)
-                )
-                HomeCard(
-                    title = "Logout",
-                    icon = Icons.AutoMirrored.Filled.Logout,
-                    onClick = {
-                        scope.launch {
-                            viewModel.logout()
-                            onLogout()
-                        }
-                    },
-                    modifier = Modifier.weight(1f)
-                )
-            }
 
             if (uiState.isLoadingContinueWatching) {
-                Spacer(modifier = Modifier.height(28.dp))
-                CircularProgressIndicator(color = Color(0xFF6C63FF))
-            }
-
-            if (!uiState.isLoadingContinueWatching && uiState.continueWatching.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(24.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(
+                        color = OroroColors.Accent,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            } else if (uiState.continueWatching.isNotEmpty()) {
                 ContinueWatchingRow(
                     items = uiState.continueWatching,
                     onContinueWatchingClick = onContinueWatchingClick,
                     firstItemFocusRequester = continueWatchingFocusRequester
                 )
+                Spacer(modifier = Modifier.height(24.dp))
             }
+
+            BrowseRow(
+                onMoviesClick = onMoviesClick,
+                onShowsClick = onShowsClick,
+                onSavedClick = onSavedClick,
+                moviesFocusRequester = moviesFocusRequester
+            )
+            Spacer(modifier = Modifier.height(32.dp))
         }
+    }
+
+    if (showSettings) {
+        SettingsDialog(
+            onClearData = {
+                showSettings = false
+                showClearConfirmation = true
+            },
+            onLogout = {
+                showSettings = false
+                scope.launch {
+                    viewModel.logout()
+                    onLogout()
+                }
+            },
+            onDismiss = { showSettings = false }
+        )
+    }
+
+    if (showClearConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showClearConfirmation = false },
+            title = { Text("Clear watch history & cache?") },
+            text = {
+                Text("Your saved movies and shows will not be removed.")
+            },
+            confirmButton = {
+                TvActionButton(
+                    text = "Clear data",
+                    icon = Icons.Default.Cached,
+                    primary = true,
+                    onClick = {
+                        viewModel.clearLocalData()
+                        showClearConfirmation = false
+                    }
+                )
+            },
+            dismissButton = {
+                TvActionButton(
+                    text = "Cancel",
+                    onClick = { showClearConfirmation = false }
+                )
+            },
+            containerColor = OroroColors.SurfaceRaised,
+            titleContentColor = OroroColors.TextPrimary,
+            textContentColor = OroroColors.TextSecondary
+        )
+    }
+}
+
+@Composable
+private fun HomeHeader(
+    onSearchClick: () -> Unit,
+    onSettingsClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                horizontal = OroroDimens.HomeHorizontalPadding,
+                vertical = 22.dp
+            ),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Image(
+            painter = painterResource(id = R.drawable.ororo_logo),
+            contentDescription = "Ororo TV logo",
+            modifier = Modifier.size(48.dp)
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = "Ororo TV",
+            fontSize = 24.sp,
+            color = OroroColors.TextPrimary
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        TvActionButton(
+            text = "Search",
+            icon = Icons.Default.Search,
+            onClick = onSearchClick
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        TvActionButton(
+            text = "Settings",
+            icon = Icons.Default.Settings,
+            onClick = onSettingsClick
+        )
     }
 }
 
@@ -180,18 +236,11 @@ private fun ContinueWatchingRow(
     firstItemFocusRequester: FocusRequester
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = "Continue Watching",
-            color = Color.White,
-            fontSize = 20.sp,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 80.dp)
-        )
+        SectionTitle("Continue Watching")
         Spacer(modifier = Modifier.height(10.dp))
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 80.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            contentPadding = PaddingValues(horizontal = OroroDimens.HomeHorizontalPadding),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             itemsIndexed(
                 items = items,
@@ -202,26 +251,21 @@ private fun ContinueWatchingRow(
                 } else {
                     Modifier
                 }
-                Column {
+                Column(modifier = Modifier.width(160.dp)) {
                     ContentCard(
                         title = item.title,
                         posterUrl = item.posterUrl,
                         year = item.year,
                         rating = item.rating,
+                        progressPercent = item.progressPercent,
                         onClick = { onContinueWatchingClick(item.contentType, item.contentId) },
                         modifier = cardModifier
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "${item.progressPercent}% watched",
-                        color = Color(0xFF77DD77),
-                        fontSize = 11.sp
-                    )
                     if (!item.subtitle.isNullOrBlank()) {
-                        Spacer(modifier = Modifier.height(2.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
                         Text(
                             text = item.subtitle,
-                            color = Color(0xFFB0B0B0),
+                            color = OroroColors.TextSecondary,
                             fontSize = 11.sp,
                             maxLines = 1
                         )
@@ -233,47 +277,140 @@ private fun ContinueWatchingRow(
 }
 
 @Composable
+private fun BrowseRow(
+    onMoviesClick: () -> Unit,
+    onShowsClick: () -> Unit,
+    onSavedClick: () -> Unit,
+    moviesFocusRequester: FocusRequester
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        SectionTitle("Browse")
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(
+            modifier = Modifier.padding(horizontal = OroroDimens.HomeHorizontalPadding),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            HomeCard(
+                title = "Movies",
+                icon = Icons.Default.Movie,
+                onClick = onMoviesClick,
+                modifier = Modifier.focusRequester(moviesFocusRequester)
+            )
+            HomeCard(
+                title = "TV Shows",
+                icon = Icons.Default.Tv,
+                onClick = onShowsClick
+            )
+            HomeCard(
+                title = "Saved",
+                icon = Icons.Default.Bookmark,
+                onClick = onSavedClick
+            )
+        }
+    }
+}
+
+@Composable
+private fun SectionTitle(text: String) {
+    Text(
+        text = text,
+        color = OroroColors.TextPrimary,
+        fontSize = 20.sp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = OroroDimens.HomeHorizontalPadding)
+    )
+}
+
+@Composable
 private fun HomeCard(
     title: String,
     icon: ImageVector,
     onClick: () -> Unit,
-    focusRequester: FocusRequester? = null,
     modifier: Modifier = Modifier
 ) {
-    val cardModifier = if (focusRequester != null) {
-        modifier.focusRequester(focusRequester)
-    } else {
-        modifier
-    }
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+    val shape = OroroShapes.Medium
 
     Surface(
         onClick = onClick,
-        modifier = cardModifier.height(180.dp),
+        modifier = modifier
+            .width(220.dp)
+            .height(100.dp)
+            .zIndex(if (isFocused) 1f else 0f),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = Color(0xFF16213e),
-            focusedContainerColor = Color(0xFF6C63FF)
+            containerColor = OroroColors.Surface,
+            focusedContainerColor = OroroColors.Surface,
+            pressedContainerColor = OroroColors.Surface
         ),
-        shape = ClickableSurfaceDefaults.shape(
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
-        )
+        shape = ClickableSurfaceDefaults.shape(shape = shape),
+        scale = OroroFocusDefaults.scale(),
+        border = OroroFocusDefaults.border(shape),
+        interactionSource = interactionSource
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 22.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = icon,
-                contentDescription = title,
-                tint = Color.White,
-                modifier = Modifier.size(48.dp)
+                contentDescription = null,
+                tint = OroroColors.TextPrimary,
+                modifier = Modifier.size(32.dp)
             )
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.width(14.dp))
             Text(
                 text = title,
-                color = Color.White,
-                fontSize = 18.sp
+                color = OroroColors.TextPrimary,
+                fontSize = 17.sp
             )
         }
     }
+}
+
+@Composable
+private fun SettingsDialog(
+    onClearData: () -> Unit,
+    onLogout: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val firstOptionFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        firstOptionFocusRequester.requestFocus()
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Settings") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                TvActionButton(
+                    text = "Clear watch history & cache",
+                    icon = Icons.Default.Cached,
+                    onClick = onClearData,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(firstOptionFocusRequester)
+                )
+                TvActionButton(
+                    text = "Sign out",
+                    icon = Icons.AutoMirrored.Filled.Logout,
+                    onClick = onLogout,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close", color = OroroColors.Accent)
+            }
+        },
+        containerColor = OroroColors.SurfaceRaised,
+        titleContentColor = OroroColors.TextPrimary,
+        textContentColor = OroroColors.TextSecondary
+    )
 }

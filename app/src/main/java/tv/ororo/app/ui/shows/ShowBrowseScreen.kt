@@ -13,7 +13,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -21,8 +20,8 @@ import androidx.tv.foundation.lazy.grid.TvGridCells
 import androidx.tv.foundation.lazy.grid.TvLazyVerticalGrid
 import androidx.tv.foundation.lazy.grid.items
 import tv.ororo.app.ui.components.ContentCard
-import tv.ororo.app.ui.components.GenreRow
 import tv.ororo.app.ui.components.SortFilterBar
+import tv.ororo.app.ui.theme.OroroColors
 
 @Composable
 fun ShowBrowseScreen(
@@ -42,7 +41,7 @@ fun ShowBrowseScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF1a1a2e))
+            .background(OroroColors.Background)
     ) {
         Row(
             modifier = Modifier
@@ -52,13 +51,13 @@ fun ShowBrowseScreen(
         ) {
             Text(
                 text = "TV Shows",
-                color = Color.White,
+                color = OroroColors.TextPrimary,
                 fontSize = 24.sp
             )
             Spacer(modifier = Modifier.weight(1f))
             Text(
                 text = "${uiState.filteredShows.size} titles",
-                color = Color.Gray,
+                color = OroroColors.TextMuted,
                 fontSize = 14.sp
             )
         }
@@ -71,15 +70,6 @@ fun ShowBrowseScreen(
             onGenreSelected = viewModel::onGenreChanged
         )
 
-        if (uiState.genres.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(4.dp))
-            GenreRow(
-                genres = uiState.genres,
-                selectedGenre = uiState.selectedGenre,
-                onGenreSelected = viewModel::onGenreChanged
-            )
-        }
-
         Spacer(modifier = Modifier.height(12.dp))
 
         when {
@@ -88,7 +78,7 @@ fun ShowBrowseScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    CircularProgressIndicator(color = Color(0xFF6C63FF))
+                    CircularProgressIndicator(color = OroroColors.Accent)
                 }
             }
             uiState.error != null -> {
@@ -96,7 +86,7 @@ fun ShowBrowseScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(text = uiState.error!!, color = Color(0xFFFF6B6B))
+                    Text(text = uiState.error!!, color = OroroColors.Error)
                 }
             }
             else -> {

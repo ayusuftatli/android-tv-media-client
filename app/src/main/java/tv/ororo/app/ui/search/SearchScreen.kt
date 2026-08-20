@@ -13,8 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -29,7 +27,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
@@ -40,6 +37,8 @@ import androidx.tv.foundation.lazy.grid.TvGridCells
 import androidx.tv.foundation.lazy.grid.TvLazyVerticalGrid
 import androidx.tv.foundation.lazy.grid.items
 import tv.ororo.app.ui.components.ContentCard
+import tv.ororo.app.ui.components.TvActionButton
+import tv.ororo.app.ui.theme.OroroColors
 
 @Composable
 fun SearchScreen(
@@ -68,7 +67,7 @@ fun SearchScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF1a1a2e))
+            .background(OroroColors.Background)
     ) {
         OutlinedTextField(
             value = uiState.query,
@@ -78,13 +77,13 @@ fun SearchScreen(
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { dismissKeyboard() }),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White,
-                focusedBorderColor = Color(0xFF6C63FF),
-                unfocusedBorderColor = Color.Gray,
-                focusedPlaceholderColor = Color.Gray,
-                unfocusedPlaceholderColor = Color.Gray,
-                cursorColor = Color.White
+                focusedTextColor = OroroColors.TextPrimary,
+                unfocusedTextColor = OroroColors.TextPrimary,
+                focusedBorderColor = OroroColors.Accent,
+                unfocusedBorderColor = OroroColors.TextMuted,
+                focusedPlaceholderColor = OroroColors.TextMuted,
+                unfocusedPlaceholderColor = OroroColors.TextMuted,
+                cursorColor = OroroColors.TextPrimary
             ),
             modifier = Modifier
                 .fillMaxWidth()
@@ -104,7 +103,7 @@ fun SearchScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator(color = Color(0xFF6C63FF))
+                CircularProgressIndicator(color = OroroColors.Accent)
             }
             return
         }
@@ -117,16 +116,15 @@ fun SearchScreen(
             ) {
                 Text(
                     text = uiState.error!!,
-                    color = Color(0xFFFF6B6B),
+                    color = OroroColors.Error,
                     fontSize = 16.sp
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-                Button(
-                    onClick = { viewModel.retry() },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6C63FF))
-                ) {
-                    Text("Retry", color = Color.White)
-                }
+                TvActionButton(
+                    text = "Retry",
+                    primary = true,
+                    onClick = viewModel::retry
+                )
             }
             return
         }
@@ -136,10 +134,38 @@ fun SearchScreen(
         if (uiState.query.length >= 2) {
             Text(
                 text = "$totalResults results",
-                color = Color.Gray,
+                color = OroroColors.TextMuted,
                 fontSize = 14.sp,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp)
             )
+        }
+
+        if (uiState.query.length < 2) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Enter at least 2 characters to search.",
+                    color = OroroColors.TextSecondary,
+                    fontSize = 16.sp
+                )
+            }
+            return
+        }
+
+        if (totalResults == 0) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "No movies or shows found.",
+                    color = OroroColors.TextSecondary,
+                    fontSize = 16.sp
+                )
+            }
+            return
         }
 
         TvLazyVerticalGrid(

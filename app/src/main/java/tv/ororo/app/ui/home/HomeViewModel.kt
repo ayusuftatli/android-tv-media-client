@@ -156,13 +156,13 @@ class HomeViewModel @Inject constructor(
         return "$episodeLabel • $episodeName"
     }
 
-    private fun calculateProgressPercent(positionMs: Long, durationMs: Long): Int {
-        if (durationMs <= 0L) return 0
-        val progress = (positionMs.toDouble() / durationMs.toDouble()) * 100.0
-        return progress.toInt().coerceIn(1, 99)
-    }
-
     companion object {
         private const val MAX_CONTINUE_WATCHING_ITEMS = 20
     }
+}
+
+internal fun calculateProgressPercent(positionMs: Long, durationMs: Long): Int {
+    if (positionMs <= 0L || durationMs <= 0L) return 0
+    val progress = (positionMs.toDouble() / durationMs.toDouble()) * 100.0
+    return progress.toInt().coerceIn(1, 99)
 }

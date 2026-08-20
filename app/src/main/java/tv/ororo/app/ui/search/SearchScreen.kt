@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -60,8 +61,10 @@ fun SearchScreen(
     }
 
     val dismissKeyboard: () -> Unit = {
+        if (!focusManager.moveFocus(FocusDirection.Down)) {
+            focusManager.clearFocus(force = true)
+        }
         keyboardController?.hide()
-        focusManager.clearFocus(force = true)
     }
 
     Column(

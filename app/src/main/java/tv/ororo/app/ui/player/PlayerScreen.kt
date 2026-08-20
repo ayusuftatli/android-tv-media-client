@@ -43,6 +43,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -137,12 +138,10 @@ fun PlayerScreen(
                 }
 
                 LaunchedEffect(uiState.selectedSubtitleLang, uiState.subtitlesEnabled) {
-                    val trackSelectionParameters = exoPlayer.trackSelectionParameters
-                        .buildUpon()
-                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !uiState.subtitlesEnabled)
-                        .setPreferredTextLanguage(uiState.selectedSubtitleLang)
-                        .build()
-                    exoPlayer.trackSelectionParameters = trackSelectionParameters
+                    exoPlayer.trackSelectionParameters = buildSubtitleTrackSelectionParameters(
+                        current = exoPlayer.trackSelectionParameters,
+                        subtitlesEnabled = uiState.subtitlesEnabled
+                    )
                 }
 
                 LaunchedEffect(uiState.streamUrl, uiState.subtitles) {
@@ -196,7 +195,17 @@ fun PlayerScreen(
                         override fun onTracksChanged(tracks: Tracks) {
                             val selectedLanguage = extractSelectedTextLanguage(tracks)
                             val subtitlesDisabled = exoPlayer.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)
-                            viewModel.onSubtitleTrackChanged(selectedLanguage, subtitlesDisabled)
+                            val hasSelectableSubtitles = hasSelectableTextTracks(tracks)
+                            if (subtitlesDisabled || hasSelectableSubtitles) {
+                                viewModel.onSubtitleTrackChanged(
+                                    selectedLanguage,
+                                    isSubtitleSelectionOff(
+                                        selectedLanguage = selectedLanguage,
+                                        isTextTrackDisabled = subtitlesDisabled,
+                                        hasSelectableTextTracks = hasSelectableSubtitles
+                                    )
+                                )
+                            }
                         }
 
                         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -570,16 +579,54 @@ internal fun inferSubtitleMimeType(url: String): String {
     }
 }
 
+internal fun buildSubtitleTrackSelectionParameters(
+    current: TrackSelectionParameters,
+    subtitlesEnabled: Boolean
+): TrackSelectionParameters {
+    return current.buildUpon()
+        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !subtitlesEnabled)
+        // PlayerControlView's "None" option ignores default text tracks. A preferred language
+        // would still select the track, so initial selection is expressed only via the subtitle
+        // configuration's SELECTION_FLAG_DEFAULT.
+        .setPreferredTextLanguage(null)
+        .setIgnoredTextSelectionFlags(
+            if (subtitlesEnabled) 0 else C.SELECTION_FLAG_FORCED.inv()
+        )
+        .build()
+}
+
 private fun extractSelectedTextLanguage(tracks: Tracks): String? {
     for (group in tracks.groups) {
         if (group.type != C.TRACK_TYPE_TEXT) continue
         for (i in 0 until group.length) {
-            if (group.isTrackSelected(i)) {
-                return group.getTrackFormat(i).language
+            val format = group.getTrackFormat(i)
+            val isForced = format.selectionFlags and C.SELECTION_FLAG_FORCED != 0
+            if (!isForced && group.isTrackSelected(i)) {
+                return format.language
             }
         }
     }
     return null
+}
+
+private fun hasSelectableTextTracks(tracks: Tracks): Boolean {
+    for (group in tracks.groups) {
+        if (group.type != C.TRACK_TYPE_TEXT) continue
+        for (i in 0 until group.length) {
+            val format = group.getTrackFormat(i)
+            val isForced = format.selectionFlags and C.SELECTION_FLAG_FORCED != 0
+            if (!isForced && group.isTrackSupported(i)) return true
+        }
+    }
+    return false
+}
+
+internal fun isSubtitleSelectionOff(
+    selectedLanguage: String?,
+    isTextTrackDisabled: Boolean,
+    hasSelectableTextTracks: Boolean
+): Boolean {
+    return isTextTrackDisabled || (hasSelectableTextTracks && selectedLanguage.isNullOrBlank())
 }
 
 private val controlKeys = setOf(

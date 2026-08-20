@@ -1,1 +1,0 @@
-1. netx episode button in plackback view

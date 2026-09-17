@@ -1,7 +1,6 @@
 package tv.ororo.app.data.repository
 
 import android.content.Context
-import android.os.SystemClock
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.IOException
@@ -14,7 +13,6 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -35,13 +33,11 @@ class TrendingMoviesRepository @Inject constructor(
     @ApplicationContext context: Context,
     private val ororoRepository: OroroRepository,
     private val tmdbApi: TmdbApi,
-    private val json: Json
+    private val json: Json,
+    private val tmdbRequestLimiter: TmdbRequestLimiter
 ) {
     private val cacheFile = File(context.cacheDir, CACHE_FILE_NAME)
     private val cacheMutex = Mutex()
-    private val requestMutex = Mutex()
-    private val requestSemaphore = Semaphore(MAX_CONCURRENT_REQUESTS)
-    private var nextRequestAtElapsedMs = 0L
 
     suspend fun getWeeklyTrendingMovies(
         forceRefresh: Boolean = false,
@@ -165,13 +161,7 @@ class TrendingMoviesRepository @Inject constructor(
         var lastError: Exception? = null
         repeat(MAX_REQUEST_ATTEMPTS) { attempt ->
             try {
-                requestSemaphore.acquire()
-                try {
-                    awaitRequestSlot()
-                    return block()
-                } finally {
-                    requestSemaphore.release()
-                }
+                return tmdbRequestLimiter.execute(block)
             } catch (error: HttpException) {
                 if (error.code() == 401 || error.code() == 403 || error.code() == 404) {
                     throw error
@@ -191,20 +181,6 @@ class TrendingMoviesRepository @Inject constructor(
             }
         }
         throw lastError ?: IOException("TMDB request failed")
-    }
-
-    private suspend fun awaitRequestSlot() {
-        requestMutex.lock()
-        try {
-            val now = SystemClock.elapsedRealtime()
-            val delayMs = (nextRequestAtElapsedMs - now).coerceAtLeast(0L)
-            if (delayMs > 0) {
-                delay(delayMs)
-            }
-            nextRequestAtElapsedMs = SystemClock.elapsedRealtime() + REQUEST_INTERVAL_MS
-        } finally {
-            requestMutex.unlock()
-        }
     }
 
     private fun retryDelayMs(error: HttpException, attempt: Int): Long {
@@ -275,8 +251,6 @@ class TrendingMoviesRepository @Inject constructor(
         private const val TRENDING_TIME_WINDOW = "week"
         private const val TRENDING_PAGE_COUNT = 5
         private const val TRENDING_MOVIE_LIMIT = 100
-        private const val REQUEST_INTERVAL_MS = 100L
-        private const val MAX_CONCURRENT_REQUESTS = 4
         private const val DEFAULT_RETRY_DELAY_MS = 1_000L
         private const val MAX_REQUEST_ATTEMPTS = 3
         private const val CACHE_TTL_MS = 24 * 60 * 60 * 1_000L

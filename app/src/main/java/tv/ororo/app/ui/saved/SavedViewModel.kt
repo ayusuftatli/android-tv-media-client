@@ -3,16 +3,26 @@ package tv.ororo.app.ui.saved
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import tv.ororo.app.data.domain.model.Movie
 import tv.ororo.app.data.domain.model.Show
 import tv.ororo.app.data.repository.OroroRepository
 import tv.ororo.app.data.repository.SavedContentRepository
 import tv.ororo.app.data.repository.WatchProgressRepository
-import javax.inject.Inject
+import tv.ororo.app.di.DefaultDispatcher
 
 data class SavedUiState(
     val savedMovies: List<Movie> = emptyList(),
@@ -26,11 +36,18 @@ data class SavedUiState(
 class SavedViewModel @Inject constructor(
     private val repository: OroroRepository,
     private val savedContentRepository: SavedContentRepository,
-    private val watchProgressRepository: WatchProgressRepository
+    private val watchProgressRepository: WatchProgressRepository,
+    @DefaultDispatcher private val defaultDispatcher: CoroutineDispatcher
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SavedUiState())
-    val uiState: StateFlow<SavedUiState> = _uiState.asStateFlow()
+    val uiState: StateFlow<SavedUiState> = combine(
+        _uiState, watchProgressRepository.watchedMovieIdsFlow()
+    ) { state, watchedIds -> state.copy(watchedMovieIds = watchedIds) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SavedUiState())
+
+    private var filterJob: Job? = null
+    private var loadJob: Job? = null
 
     private var allMovies: List<Movie> = emptyList()
     private var allShows: List<Show> = emptyList()
@@ -38,7 +55,6 @@ class SavedViewModel @Inject constructor(
 
     init {
         observeSavedKeys()
-        observeWatchStates()
         loadData()
     }
 
@@ -51,26 +67,22 @@ class SavedViewModel @Inject constructor(
         }
     }
 
-    private fun observeWatchStates() {
-        viewModelScope.launch {
-            watchProgressRepository.watchStatesFlow().collect { states ->
-                val watchedMovieIds = states.values
-                    .filter { it.completed && it.contentKey.startsWith("movie:") }
-                    .mapNotNull { it.contentKey.substringAfter("movie:").toIntOrNull() }
-                    .toSet()
-                _uiState.value = _uiState.value.copy(watchedMovieIds = watchedMovieIds)
-            }
-        }
-    }
-
     private fun loadData() {
-        viewModelScope.launch {
+        if (loadJob?.isActive == true) return
+        loadJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
-                allMovies = repository.getMovies()
-                allShows = repository.getShows()
+                val (movies, shows) = coroutineScope {
+                    val movies = async { repository.getMovies() }
+                    val shows = async { repository.getShows() }
+                    movies.await() to shows.await()
+                }
+                allMovies = movies
+                allShows = shows
                 _uiState.value = _uiState.value.copy(isLoading = false, error = null)
                 applySavedFilter()
+            } catch (error: CancellationException) {
+                throw error
             } catch (_: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
@@ -85,22 +97,18 @@ class SavedViewModel @Inject constructor(
     }
 
     private fun applySavedFilter() {
-        val savedMovieIds = SavedContentRepository.savedIdsForType(
-            savedKeys,
-            SavedContentRepository.TYPE_MOVIE
-        )
-        val savedShowIds = SavedContentRepository.savedIdsForType(
-            savedKeys,
-            SavedContentRepository.TYPE_SHOW
-        )
-
-        _uiState.value = _uiState.value.copy(
-            savedMovies = allMovies
-                .filter { it.id in savedMovieIds }
-                .sortedBy { it.name.lowercase() },
-            savedShows = allShows
-                .filter { it.id in savedShowIds }
-                .sortedBy { it.name.lowercase() }
-        )
+        filterJob?.cancel()
+        val keys = savedKeys
+        val movies = allMovies
+        val shows = allShows
+        filterJob = viewModelScope.launch {
+            val (savedMovies, savedShows) = withContext(defaultDispatcher) {
+                val movieIds = SavedContentRepository.savedIdsForType(keys, SavedContentRepository.TYPE_MOVIE)
+                val showIds = SavedContentRepository.savedIdsForType(keys, SavedContentRepository.TYPE_SHOW)
+                movies.filter { it.id in movieIds }.sortedBy { it.normalizedTitle } to
+                    shows.filter { it.id in showIds }.sortedBy { it.normalizedTitle }
+            }
+            _uiState.update { it.copy(savedMovies = savedMovies, savedShows = savedShows) }
+        }
     }
 }

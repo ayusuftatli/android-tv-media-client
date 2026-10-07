@@ -7,21 +7,33 @@ import coil.annotation.ExperimentalCoilApi
 import coil.imageLoader
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.util.concurrent.ConcurrentHashMap
+import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import tv.ororo.app.data.domain.model.EpisodeDetail
 import tv.ororo.app.data.domain.model.Movie
+import tv.ororo.app.data.domain.model.Show
 import tv.ororo.app.data.repository.OroroRepository
 import tv.ororo.app.data.repository.SessionRepository
 import tv.ororo.app.data.repository.TrendingMoviesRepository
 import tv.ororo.app.data.repository.TrendingShowsRepository
 import tv.ororo.app.data.repository.WatchProgressRepository
-import javax.inject.Inject
+import tv.ororo.app.di.DefaultDispatcher
 
 data class ContinueWatchingItem(
     val contentType: String,
@@ -47,17 +59,27 @@ class HomeViewModel @Inject constructor(
     private val ororoRepository: OroroRepository,
     private val trendingMoviesRepository: TrendingMoviesRepository,
     private val trendingShowsRepository: TrendingShowsRepository,
-    private val watchProgressRepository: WatchProgressRepository
+    private val watchProgressRepository: WatchProgressRepository,
+    @DefaultDispatcher private val defaultDispatcher: CoroutineDispatcher
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(HomeUiState())
-    val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+    private val episodeMetadataCache = ConcurrentHashMap<Int, EpisodeDetail>()
+    private var indexedMovies: List<Movie>? = null
+    private var moviesById: Map<Int, Movie> = emptyMap()
+    private var indexedShows: List<Show>? = null
+    private var showsByName: Map<String, Show> = emptyMap()
+    private val episodeRequests = Semaphore(4)
 
-    private val episodeMetadataCache = mutableMapOf<Int, EpisodeDetail>()
-
-    init {
-        observeContinueWatching()
-    }
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val uiState: StateFlow<HomeUiState> = watchProgressRepository.inProgressWatchStatesFlow()
+        .mapLatest { states ->
+            HomeUiState(
+                continueWatching = if (states.isEmpty()) emptyList() else buildContinueWatchingItems(states),
+                isLoadingContinueWatching = false
+            )
+        }
+        .flowOn(defaultDispatcher)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 
     suspend fun logout() {
         sessionRepository.clearSession()
@@ -84,88 +106,95 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    private fun observeContinueWatching() {
-        viewModelScope.launch {
-            watchProgressRepository.inProgressWatchStatesFlow().collectLatest { inProgressStates ->
-                if (inProgressStates.isEmpty()) {
-                    _uiState.value = _uiState.value.copy(
-                        continueWatching = emptyList(),
-                        isLoadingContinueWatching = false
-                    )
-                    return@collectLatest
-                }
-
-                _uiState.value = _uiState.value.copy(isLoadingContinueWatching = true)
-                val continueWatchingItems = buildContinueWatchingItems(inProgressStates)
-                _uiState.value = _uiState.value.copy(
-                    continueWatching = continueWatchingItems,
-                    isLoadingContinueWatching = false
-                )
-            }
-        }
-    }
-
     private suspend fun buildContinueWatchingItems(
         inProgressStates: List<tv.ororo.app.data.repository.WatchState>
     ): List<ContinueWatchingItem> {
-        val moviesById = runCatching {
-            ororoRepository.getMovies().associateBy(Movie::id)
-        }.getOrDefault(emptyMap())
-        val showsByName = runCatching {
-            ororoRepository.getShows().associateBy { normalizeShowName(it.name) }
-        }.getOrDefault(emptyMap())
-
-        return inProgressStates.take(MAX_CONTINUE_WATCHING_ITEMS).mapNotNull { watchState ->
-            val (contentType, contentId) = WatchProgressRepository.parseContentKey(watchState.contentKey)
-                ?: return@mapNotNull null
-            val progressPercent = calculateProgressPercent(
-                positionMs = watchState.positionMs,
-                durationMs = watchState.durationMs
-            )
-            when (contentType.lowercase()) {
-                "movie" -> {
-                    val movie = moviesById[contentId] ?: return@mapNotNull null
-                    ContinueWatchingItem(
-                        contentType = "movie",
-                        contentId = movie.id,
-                        title = movie.name,
-                        subtitle = null,
-                        posterUrl = movie.posterUrl,
-                        year = movie.year,
-                        rating = movie.imdbRating,
-                        progressPercent = progressPercent,
-                        updatedAt = watchState.updatedAt
-                    )
+        val visibleStates = inProgressStates.take(MAX_CONTINUE_WATCHING_ITEMS)
+        coroutineScope {
+            val movies = async {
+                if (visibleStates.none { it.contentKey.startsWith("movie:") }) return@async
+                val catalog = metadataOrNull { ororoRepository.getMovies() } ?: return@async
+                if (catalog !== indexedMovies) {
+                    moviesById = catalog.associateBy(Movie::id)
+                    indexedMovies = catalog
                 }
-
-                "episode" -> {
-                    val episodeDetail = episodeMetadataCache[contentId]
-                        ?: runCatching { ororoRepository.getEpisodeDetail(contentId) }
-                            .getOrNull()
-                            ?.also { episodeMetadataCache[contentId] = it }
-                        ?: return@mapNotNull null
-                    val normalizedShowName = normalizeShowName(episodeDetail.showName.orEmpty())
-                    val show = showsByName[normalizedShowName]
-                    ContinueWatchingItem(
-                        contentType = "episode",
-                        contentId = contentId,
-                        title = episodeDetail.showName ?: (episodeDetail.name ?: "Episode"),
-                        subtitle = formatEpisodeSubtitle(
-                            season = episodeDetail.season,
-                            number = episodeDetail.number,
-                            episodeName = episodeDetail.name
-                        ),
-                        posterUrl = show?.posterUrl,
-                        year = show?.year,
-                        rating = show?.imdbRating,
-                        progressPercent = progressPercent,
-                        updatedAt = watchState.updatedAt
-                    )
-                }
-
-                else -> null
             }
-        }.sortedByDescending { it.updatedAt }
+            val shows = async {
+                if (visibleStates.none { it.contentKey.startsWith("episode:") }) return@async
+                val catalog = metadataOrNull { ororoRepository.getShows() } ?: return@async
+                if (catalog !== indexedShows) {
+                    showsByName = catalog.associateBy { normalizeShowName(it.name) }
+                    indexedShows = catalog
+                }
+            }
+            movies.await()
+            shows.await()
+        }
+
+        return coroutineScope {
+            visibleStates.map { watchState ->
+                async {
+                    val (contentType, contentId) = WatchProgressRepository.parseContentKey(watchState.contentKey)
+                        ?: return@async null
+                    val progressPercent = calculateProgressPercent(
+                        positionMs = watchState.positionMs,
+                        durationMs = watchState.durationMs
+                    )
+                    when (contentType.lowercase()) {
+                        "movie" -> {
+                            val movie = moviesById[contentId] ?: return@async null
+                            ContinueWatchingItem(
+                                contentType = "movie",
+                                contentId = movie.id,
+                                title = movie.name,
+                                subtitle = null,
+                                posterUrl = movie.posterUrl,
+                                year = movie.year,
+                                rating = movie.imdbRating,
+                                progressPercent = progressPercent,
+                                updatedAt = watchState.updatedAt
+                            )
+                        }
+
+                        "episode" -> {
+                            val episodeDetail = episodeMetadataCache[contentId]
+                                ?: episodeRequests.withPermit {
+                                    metadataOrNull { ororoRepository.getEpisodeDetail(contentId) }
+                                }
+                                    ?.also { episodeMetadataCache[contentId] = it }
+                                ?: return@async null
+                            val normalizedShowName = normalizeShowName(episodeDetail.showName.orEmpty())
+                            val show = showsByName[normalizedShowName]
+                            ContinueWatchingItem(
+                                contentType = "episode",
+                                contentId = contentId,
+                                title = episodeDetail.showName ?: (episodeDetail.name ?: "Episode"),
+                                subtitle = formatEpisodeSubtitle(
+                                    season = episodeDetail.season,
+                                    number = episodeDetail.number,
+                                    episodeName = episodeDetail.name
+                                ),
+                                posterUrl = show?.posterUrl,
+                                year = show?.year,
+                                rating = show?.imdbRating,
+                                progressPercent = progressPercent,
+                                updatedAt = watchState.updatedAt
+                            )
+                        }
+
+                        else -> null
+                    }
+                }
+            }.awaitAll().filterNotNull().sortedByDescending { it.updatedAt }
+        }
+    }
+
+    private suspend fun <T> metadataOrNull(block: suspend () -> T): T? = try {
+        block()
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        null
     }
 
     private fun normalizeShowName(name: String): String {

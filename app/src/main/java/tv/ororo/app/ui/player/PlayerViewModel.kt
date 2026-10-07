@@ -3,10 +3,17 @@ package tv.ororo.app.ui.player
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.util.Locale
+import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import tv.ororo.app.data.api.HttpStatusException
 import tv.ororo.app.data.auth.AuthEvent
@@ -18,8 +25,7 @@ import tv.ororo.app.data.repository.OroroRepository
 import tv.ororo.app.data.repository.SessionRepository
 import tv.ororo.app.data.repository.SubtitlePreferencesRepository
 import tv.ororo.app.data.repository.WatchProgressRepository
-import java.util.Locale
-import javax.inject.Inject
+import tv.ororo.app.di.ApplicationScope
 
 data class NextEpisodeUi(
     val id: Int,
@@ -45,16 +51,19 @@ class PlayerViewModel @Inject constructor(
     private val sessionRepository: SessionRepository,
     private val subtitlePreferencesRepository: SubtitlePreferencesRepository,
     private val watchProgressRepository: WatchProgressRepository,
-    private val authEventBus: AuthEventBus
+    private val authEventBus: AuthEventBus,
+    @ApplicationScope private val applicationScope: CoroutineScope
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
-    fun loadContent(type: String, id: Int) {
-        if (_uiState.value.streamUrl != null) return
+    private var loadJob: Job? = null
 
-        viewModelScope.launch {
+    fun loadContent(type: String, id: Int) {
+        if (_uiState.value.streamUrl != null || loadJob?.isActive == true) return
+
+        loadJob = viewModelScope.launch {
             _uiState.value = PlayerUiState(isLoading = true)
             try {
                 val subtitlesEnabled = subtitlePreferencesRepository.subtitlesEnabled.first()
@@ -85,14 +94,6 @@ class PlayerViewModel @Inject constructor(
 
                     "episode" -> {
                         val episode = repository.getEpisodeDetail(id)
-                        val nextEpisode = try {
-                            resolveNextEpisode(episode)
-                        } catch (e: HttpStatusException) {
-                            if (e.code == 401) throw e
-                            null
-                        } catch (_: Exception) {
-                            null
-                        }
                         val title = if (episode.showName != null && episode.season != null && episode.number != null) {
                             "${episode.showName} S%02dE%02d".format(episode.season, episode.number)
                         } else {
@@ -108,17 +109,32 @@ class PlayerViewModel @Inject constructor(
                                 preferredSubtitleLang,
                                 subtitlesEnabled
                             ),
-                            subtitlesEnabled = subtitlesEnabled,
-                            nextEpisode = nextEpisode?.let {
+                            subtitlesEnabled = subtitlesEnabled
+                        )
+                        // Playback can begin while optional next-episode metadata is loading.
+                        val nextEpisode = try {
+                            resolveNextEpisode(episode)
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (error: HttpStatusException) {
+                            if (error.code == 401) throw error
+                            null
+                        } catch (_: Exception) {
+                            null
+                        }
+                        _uiState.update { state ->
+                            state.copy(nextEpisode = nextEpisode?.let {
                                 NextEpisodeUi(
                                     id = it.id,
                                     label = "S%02dE%02d".format(it.season, it.number),
                                     title = it.name
                                 )
-                            }
-                        )
+                            })
+                        }
                     }
                 }
+            } catch (error: CancellationException) {
+                throw error
             } catch (e: Exception) {
                 val httpCode = (e as? HttpStatusException)?.code
                 if (httpCode == 401) {
@@ -175,7 +191,7 @@ class PlayerViewModel @Inject constructor(
         durationMs: Long,
         isEnded: Boolean
     ) {
-        viewModelScope.launch {
+        applicationScope.launch(start = CoroutineStart.UNDISPATCHED) {
             val key = WatchProgressRepository.contentKey(contentType, contentId)
             watchProgressRepository.saveProgress(key, positionMs, durationMs, isEnded)
         }

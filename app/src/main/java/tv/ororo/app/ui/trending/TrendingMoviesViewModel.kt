@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.IOException
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,6 +23,7 @@ data class TrendingMoviesUiState(
     val completedLookups: Int = 0,
     val totalLookups: Int = 0,
     val isLoading: Boolean = false,
+    val hasLoadedResults: Boolean = false,
     val isStale: Boolean = false,
     val error: String? = null
 )
@@ -32,6 +35,8 @@ class TrendingMoviesViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(TrendingMoviesUiState())
     val uiState: StateFlow<TrendingMoviesUiState> = _uiState.asStateFlow()
 
+    private var loadJob: Job? = null
+
     init {
         loadTrendingMovies()
     }
@@ -41,11 +46,22 @@ class TrendingMoviesViewModel @Inject constructor(
     }
 
     private fun loadTrendingMovies(forceRefresh: Boolean = false) {
-        viewModelScope.launch {
-            _uiState.value = TrendingMoviesUiState(isLoading = true)
+        if (loadJob?.isActive == true) return
+        loadJob = viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, error = null) }
             try {
                 val result = repository.getWeeklyTrendingMovies(
                     forceRefresh = forceRefresh,
+                    onCachedResult = { cached ->
+                        _uiState.update { state ->
+                            state.copy(
+                                movies = cached.movies,
+                                rankedMovieCount = cached.rankedMovieCount,
+                                hasLoadedResults = true,
+                                isStale = cached.isStale
+                            )
+                        }
+                    },
                     onProgress = { completed, total ->
                         _uiState.update { state ->
                             state.copy(
@@ -60,10 +76,13 @@ class TrendingMoviesViewModel @Inject constructor(
                         movies = result.movies,
                         rankedMovieCount = result.rankedMovieCount,
                         isLoading = false,
+                        hasLoadedResults = true,
                         isStale = result.isStale,
                         error = null
                     )
                 }
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
                 _uiState.update { state ->
                     state.copy(

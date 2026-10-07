@@ -1,5 +1,6 @@
 package tv.ororo.app.ui.trending
 
+import androidx.compose.runtime.getValue
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,8 +16,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,6 +24,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.foundation.lazy.grid.TvGridCells
 import androidx.tv.foundation.lazy.grid.TvLazyVerticalGrid
 import androidx.tv.foundation.lazy.grid.items
@@ -38,15 +38,15 @@ fun TrendingShowsScreen(
     onBack: () -> Unit,
     viewModel: TrendingShowsViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val gridFocusRequester = remember { FocusRequester() }
     val retryFocusRequester = remember { FocusRequester() }
 
-    LaunchedEffect(uiState.isLoading, uiState.shows, uiState.error) {
+    LaunchedEffect(uiState.hasLoadedResults, uiState.shows.isNotEmpty(), uiState.error) {
         try {
             when {
-                uiState.error != null -> retryFocusRequester.requestFocus()
-                !uiState.isLoading && uiState.shows.isNotEmpty() -> gridFocusRequester.requestFocus()
+                uiState.error != null && !uiState.hasLoadedResults -> retryFocusRequester.requestFocus()
+                uiState.hasLoadedResults && uiState.shows.isNotEmpty() -> gridFocusRequester.requestFocus()
             }
         } catch (_: IllegalStateException) {
         }
@@ -87,7 +87,7 @@ fun TrendingShowsScreen(
         }
 
         when {
-            uiState.isLoading -> {
+            uiState.isLoading && !uiState.hasLoadedResults -> {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -107,7 +107,7 @@ fun TrendingShowsScreen(
                     }
                 }
             }
-            uiState.error != null -> {
+            uiState.error != null && !uiState.hasLoadedResults -> {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -165,6 +165,7 @@ fun TrendingShowsScreen(
 }
 
 private fun trendingShowsSummary(state: TrendingShowsUiState): String = when {
+    state.isLoading && state.hasLoadedResults -> "Refreshing weekly chart…"
     state.isLoading && state.totalLookups == 0 -> "TMDB weekly top 100 • available on Ororo"
     state.isLoading -> "Checking which TMDB TV series are available on Ororo"
     state.rankedShowCount > 0 ->

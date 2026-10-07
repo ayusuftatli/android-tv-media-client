@@ -4,9 +4,14 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import tv.ororo.app.data.api.HttpStatusException
 import tv.ororo.app.data.auth.AuthEvent
@@ -18,7 +23,7 @@ import tv.ororo.app.data.repository.SavedContentRepository
 import tv.ororo.app.data.repository.SessionRepository
 import tv.ororo.app.data.repository.WatchProgressRepository
 import tv.ororo.app.data.repository.WatchState
-import javax.inject.Inject
+import tv.ororo.app.di.DefaultDispatcher
 
 data class ShowDetailUiState(
     val show: ShowDetail? = null,
@@ -38,41 +43,32 @@ class ShowDetailViewModel @Inject constructor(
     private val sessionRepository: SessionRepository,
     private val savedContentRepository: SavedContentRepository,
     private val watchProgressRepository: WatchProgressRepository,
-    private val authEventBus: AuthEventBus
+    private val authEventBus: AuthEventBus,
+    @DefaultDispatcher private val defaultDispatcher: CoroutineDispatcher
 ) : ViewModel() {
 
     private val showId: Int = savedStateHandle["showId"] ?: 0
 
     private val _uiState = MutableStateFlow(ShowDetailUiState())
-    val uiState: StateFlow<ShowDetailUiState> = _uiState.asStateFlow()
-    private var episodeWatchStatesById: Map<Int, WatchState> = emptyMap()
+    val uiState: StateFlow<ShowDetailUiState> = combine(
+        _uiState, watchProgressRepository.watchStatesFlow()
+    ) { state, watchStates ->
+        val episodeStates = watchStates.values.mapNotNull { watchState ->
+            val (type, id) = WatchProgressRepository.parseContentKey(watchState.contentKey)
+                ?: return@mapNotNull null
+            if (type != "episode") return@mapNotNull null
+            id to watchState
+        }.toMap()
+        state.copy(
+            watchedEpisodeIds = episodeStates.filterValues(WatchState::completed).keys,
+            resumeEpisode = state.show?.let { findResumeEpisode(it.episodes, episodeStates) }
+        )
+    }.flowOn(defaultDispatcher)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ShowDetailUiState())
 
     init {
-        observeWatchStates()
         observeSavedState()
         loadShow()
-    }
-
-    private fun observeWatchStates() {
-        viewModelScope.launch {
-            watchProgressRepository.watchStatesFlow().collect { states ->
-                episodeWatchStatesById = states.values.mapNotNull { state ->
-                    val (type, id) = WatchProgressRepository.parseContentKey(state.contentKey)
-                        ?: return@mapNotNull null
-                    if (type.lowercase() != "episode") return@mapNotNull null
-                    id to state
-                }.toMap()
-                val show = _uiState.value.show
-                _uiState.value = _uiState.value.copy(
-                    watchedEpisodeIds = episodeWatchStatesById
-                        .filterValues(WatchState::completed)
-                        .keys,
-                    resumeEpisode = show?.let { detail ->
-                        findResumeEpisode(detail.episodes, episodeWatchStatesById)
-                    }
-                )
-            }
-        }
     }
 
     private fun observeSavedState() {
@@ -99,7 +95,6 @@ class ShowDetailViewModel @Inject constructor(
                     selectedSeason = firstSeason,
                     seasonEpisodes = show.episodes.filter { it.season == firstSeason }
                         .sortedBy { it.number },
-                    resumeEpisode = findResumeEpisode(show.episodes, episodeWatchStatesById),
                     isLoading = false,
                     error = null
                 )

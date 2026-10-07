@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.IOException
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,6 +23,7 @@ data class TrendingShowsUiState(
     val completedLookups: Int = 0,
     val totalLookups: Int = 0,
     val isLoading: Boolean = false,
+    val hasLoadedResults: Boolean = false,
     val isStale: Boolean = false,
     val error: String? = null
 )
@@ -32,6 +35,8 @@ class TrendingShowsViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(TrendingShowsUiState())
     val uiState: StateFlow<TrendingShowsUiState> = _uiState.asStateFlow()
 
+    private var loadJob: Job? = null
+
     init {
         loadTrendingShows()
     }
@@ -41,11 +46,22 @@ class TrendingShowsViewModel @Inject constructor(
     }
 
     private fun loadTrendingShows(forceRefresh: Boolean = false) {
-        viewModelScope.launch {
-            _uiState.value = TrendingShowsUiState(isLoading = true)
+        if (loadJob?.isActive == true) return
+        loadJob = viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, error = null) }
             try {
                 val result = repository.getWeeklyTrendingShows(
                     forceRefresh = forceRefresh,
+                    onCachedResult = { cached ->
+                        _uiState.update { state ->
+                            state.copy(
+                                shows = cached.shows,
+                                rankedShowCount = cached.rankedShowCount,
+                                hasLoadedResults = true,
+                                isStale = cached.isStale
+                            )
+                        }
+                    },
                     onProgress = { completed, total ->
                         _uiState.update { state ->
                             state.copy(
@@ -60,10 +76,13 @@ class TrendingShowsViewModel @Inject constructor(
                         shows = result.shows,
                         rankedShowCount = result.rankedShowCount,
                         isLoading = false,
+                        hasLoadedResults = true,
                         isStale = result.isStale,
                         error = null
                     )
                 }
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
                 _uiState.update { state ->
                     state.copy(

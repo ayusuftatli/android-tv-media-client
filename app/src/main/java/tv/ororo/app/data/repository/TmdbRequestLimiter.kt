@@ -9,7 +9,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 
 @Singleton
-class TmdbRequestLimiter @Inject constructor() {
+class TmdbRequestLimiter internal constructor(private val elapsedRealtime: () -> Long) {
+    @Inject constructor() : this({ SystemClock.elapsedRealtime() })
     private val requestMutex = Mutex()
     private val requestSemaphore = Semaphore(MAX_CONCURRENT_REQUESTS)
     private val requestStarts = ArrayDeque<Long>()
@@ -29,7 +30,7 @@ class TmdbRequestLimiter @Inject constructor() {
         requestMutex.lock()
         try {
             while (true) {
-                val now = SystemClock.elapsedRealtime()
+                val now = elapsedRealtime()
                 discardExpiredRequestStarts(now)
 
                 val spacingDelayMs = (nextRequestAtElapsedMs - now).coerceAtLeast(0L)
@@ -49,7 +50,7 @@ class TmdbRequestLimiter @Inject constructor() {
                     continue
                 }
 
-                val requestStart = SystemClock.elapsedRealtime()
+                val requestStart = elapsedRealtime()
                 discardExpiredRequestStarts(requestStart)
                 requestStarts.addLast(requestStart)
                 nextRequestAtElapsedMs = requestStart + REQUEST_INTERVAL_MS

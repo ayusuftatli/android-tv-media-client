@@ -8,40 +8,43 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
 import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 private val Context.subtitlePrefsDataStore: DataStore<Preferences> by preferencesDataStore(name = "subtitle_preferences")
 
 @Singleton
-class SubtitlePreferencesRepository @Inject constructor(
-    @ApplicationContext private val context: Context
+class SubtitlePreferencesRepository internal constructor(
+    private val dataStore: DataStore<Preferences>
 ) {
+    @Inject
+    constructor(@ApplicationContext context: Context) : this(context.subtitlePrefsDataStore)
+
     private val subtitlesEnabledKey = booleanPreferencesKey("subtitles_enabled")
     private val preferredSubtitleLangKey = stringPreferencesKey("preferred_subtitle_lang")
 
-    val subtitlesEnabled: Flow<Boolean> = context.subtitlePrefsDataStore.data.map { prefs ->
+    val subtitlesEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[subtitlesEnabledKey] ?: true
     }
 
-    val preferredSubtitleLang: Flow<String> = context.subtitlePrefsDataStore.data.map { prefs ->
+    val preferredSubtitleLang: Flow<String> = dataStore.data.map { prefs ->
         normalizeLanguage(prefs[preferredSubtitleLangKey])
             ?: normalizeLanguage(Locale.getDefault().language)
             ?: "en"
     }
 
     suspend fun setSubtitlesEnabled(enabled: Boolean) {
-        context.subtitlePrefsDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[subtitlesEnabledKey] = enabled
         }
     }
 
     suspend fun setPreferredSubtitleLang(lang: String) {
         val normalized = normalizeLanguage(lang) ?: return
-        context.subtitlePrefsDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[preferredSubtitleLangKey] = normalized
             prefs[subtitlesEnabledKey] = true
         }

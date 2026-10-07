@@ -3,19 +3,30 @@ package tv.ororo.app.ui.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.util.Locale
+import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import tv.ororo.app.data.domain.model.Movie
 import tv.ororo.app.data.domain.model.Show
 import tv.ororo.app.data.repository.OroroRepository
 import tv.ororo.app.data.repository.WatchProgressRepository
-import javax.inject.Inject
+import tv.ororo.app.di.DefaultDispatcher
 
 data class SearchUiState(
     val query: String = "",
@@ -29,42 +40,44 @@ data class SearchUiState(
 @HiltViewModel
 class SearchViewModel @Inject constructor(
     private val repository: OroroRepository,
-    private val watchProgressRepository: WatchProgressRepository
+    private val watchProgressRepository: WatchProgressRepository,
+    @DefaultDispatcher private val defaultDispatcher: CoroutineDispatcher
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SearchUiState())
-    val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
+    val uiState: StateFlow<SearchUiState> = combine(
+        _uiState, watchProgressRepository.watchedMovieIdsFlow()
+    ) { state, watchedIds -> state.copy(watchedMovieIds = watchedIds) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SearchUiState())
     private val queryFlow = MutableStateFlow("")
+
+    private var searchJob: Job? = null
+    private var loadJob: Job? = null
 
     private var allMovies: List<Movie> = emptyList()
     private var allShows: List<Show> = emptyList()
 
     init {
-        observeWatchStates()
         observeQueryChanges()
         loadData()
     }
 
-    private fun observeWatchStates() {
-        viewModelScope.launch {
-            watchProgressRepository.watchStatesFlow().collect { states ->
-                val watchedMovieIds = states.values
-                    .filter { it.completed && it.contentKey.startsWith("movie:") }
-                    .mapNotNull { it.contentKey.substringAfter("movie:").toIntOrNull() }
-                    .toSet()
-                _uiState.value = _uiState.value.copy(watchedMovieIds = watchedMovieIds)
-            }
-        }
-    }
-
     private fun loadData() {
-        viewModelScope.launch {
+        if (loadJob?.isActive == true) return
+        loadJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
-                allMovies = repository.getMovies()
-                allShows = repository.getShows()
+                val (movies, shows) = coroutineScope {
+                    val movies = async { repository.getMovies() }
+                    val shows = async { repository.getShows() }
+                    movies.await() to shows.await()
+                }
+                allMovies = movies
+                allShows = shows
                 _uiState.value = _uiState.value.copy(isLoading = false)
                 applyQuery(_uiState.value.query)
+            } catch (error: CancellationException) {
+                throw error
             } catch (_: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
@@ -96,24 +109,19 @@ class SearchViewModel @Inject constructor(
     }
 
     private fun applyQuery(query: String) {
-        if (query.length < 2) {
-            _uiState.value = _uiState.value.copy(
-                movieResults = emptyList(),
-                showResults = emptyList()
-            )
-            return
+        searchJob?.cancel()
+        val moviesSnapshot = allMovies
+        val showsSnapshot = allShows
+        searchJob = viewModelScope.launch {
+            val (movies, shows) = withContext(defaultDispatcher) {
+                if (query.length < 2) return@withContext emptyList<Movie>() to emptyList<Show>()
+                val terms = query.lowercase(Locale.ROOT).split(" ").filter { it.isNotBlank() }
+                moviesSnapshot.filter { movie -> terms.all(movie.normalizedTitle::contains) } to
+                    showsSnapshot.filter { show -> terms.all(show.normalizedTitle::contains) }
+            }
+            if (query == queryFlow.value) {
+                _uiState.update { it.copy(movieResults = movies, showResults = shows) }
+            }
         }
-        val terms = query.lowercase().split(" ").filter { it.isNotBlank() }
-        val movies = allMovies.filter { movie ->
-            terms.all { term -> movie.name.lowercase().contains(term) }
-        }
-        val shows = allShows.filter { show ->
-            terms.all { term -> show.name.lowercase().contains(term) }
-        }
-
-        _uiState.value = _uiState.value.copy(
-            movieResults = movies,
-            showResults = shows
-        )
     }
 }

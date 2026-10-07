@@ -1,5 +1,7 @@
 package tv.ororo.app.data.domain.model
 
+import java.util.Locale
+
 data class Movie(
     val id: Int,
     val name: String,
@@ -11,7 +13,9 @@ data class Movie(
     val genres: List<String>,
     val description: String?,
     val updatedAt: String?
-)
+) {
+    val normalizedTitle: String = name.lowercase(Locale.ROOT)
+}
 
 data class MovieDetail(
     val id: Int,
@@ -62,7 +66,9 @@ data class Show(
     val seasonCount: Int?,
     val newestVideo: String?,
     val userPopularity: Double?
-)
+) {
+    val normalizedTitle: String = name.lowercase(Locale.ROOT)
+}
 
 data class ShowDetail(
     val id: Int,

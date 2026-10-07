@@ -7,6 +7,8 @@ import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -23,42 +25,59 @@ import tv.ororo.app.data.api.TmdbApi
 import tv.ororo.app.data.domain.model.Show
 import tv.ororo.app.data.domain.model.TrendingShow
 import tv.ororo.app.data.domain.model.TrendingShowsResult
+import tv.ororo.app.di.DefaultDispatcher
 
 @Singleton
-class TrendingShowsRepository @Inject constructor(
-    @ApplicationContext context: Context,
+class TrendingShowsRepository internal constructor(
+    private val cacheFile: File,
     private val ororoRepository: OroroRepository,
     private val tmdbApi: TmdbApi,
     private val json: Json,
-    private val tmdbRequestLimiter: TmdbRequestLimiter
+    private val tmdbRequestLimiter: TmdbRequestLimiter,
+    private val defaultDispatcher: CoroutineDispatcher,
+    private val isConfigured: () -> Boolean
 ) {
-    private val cacheFile = File(context.cacheDir, CACHE_FILE_NAME)
+    @Inject
+    constructor(
+        @ApplicationContext context: Context,
+        ororoRepository: OroroRepository,
+        tmdbApi: TmdbApi,
+        json: Json,
+        tmdbRequestLimiter: TmdbRequestLimiter,
+        @DefaultDispatcher defaultDispatcher: CoroutineDispatcher
+    ) : this(
+        File(context.cacheDir, CACHE_FILE_NAME), ororoRepository, tmdbApi, json,
+        tmdbRequestLimiter, defaultDispatcher, { BuildConfig.TMDB_READ_ACCESS_TOKEN.isNotBlank() }
+    )
     private val cacheMutex = Mutex()
 
     suspend fun getWeeklyTrendingShows(
         forceRefresh: Boolean = false,
-        onProgress: (completed: Int, total: Int) -> Unit = { _, _ -> }
-    ): TrendingShowsResult {
+        onProgress: (completed: Int, total: Int) -> Unit = { _, _ -> },
+        onCachedResult: (TrendingShowsResult) -> Unit = {}
+    ): TrendingShowsResult = coroutineScope {
         val cached = readCache()
-        val now = System.currentTimeMillis()
-        if (!forceRefresh && cached != null && isTrendingCacheFresh(cached.fetchedAtEpochMs, now)) {
+        val catalog = async { ororoRepository.getShows() }
+        val isFresh = cached != null && isTrendingCacheFresh(cached.fetchedAtEpochMs, System.currentTimeMillis())
+        val cachedResult = if (cached != null) {
+            val titles = catalog.await()
+            withContext(defaultDispatcher) { cached.toResult(titles, isStale = !isFresh || forceRefresh) }
+        } else null
+        if (!forceRefresh && isFresh && cachedResult != null) {
             onProgress(cached.entries.size, cached.entries.size)
-            return cached.toResult(ororoRepository.getShows(), isStale = false)
+            return@coroutineScope cachedResult
         }
+        cachedResult?.let(onCachedResult)
 
-        return try {
-            if (BuildConfig.TMDB_READ_ACCESS_TOKEN.isBlank()) {
-                throw TmdbConfigurationException()
-            }
-            val refreshed = refreshCache(onProgress)
-            refreshed.toResult(ororoRepository.getShows(), isStale = false)
+        try {
+            if (!isConfigured()) throw TmdbConfigurationException()
+            val refreshed = refreshCache(cached, onProgress)
+            val titles = catalog.await()
+            withContext(defaultDispatcher) { refreshed.toResult(titles, isStale = false) }
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
-            if (cached != null) {
-                onProgress(cached.entries.size, cached.entries.size)
-                cached.toResult(ororoRepository.getShows(), isStale = true)
-            } else {
-                throw error
-            }
+            cachedResult ?: throw error
         }
     }
 
@@ -74,6 +93,7 @@ class TrendingShowsRepository @Inject constructor(
     }
 
     private suspend fun refreshCache(
+        cached: TrendingShowsCachePayload?,
         onProgress: (completed: Int, total: Int) -> Unit
     ): TrendingShowsCachePayload {
         val tmdbIds = loadTopTrendingShowIds()
@@ -81,12 +101,19 @@ class TrendingShowsRepository @Inject constructor(
             throw IOException("TMDB returned no trending TV shows")
         }
 
+        // Rankings expire daily; successful TMDB-to-IMDb mappings survive ranking changes.
+        val knownIds = cached?.let { previous ->
+            previous.resolvedImdbIds + previous.entries.mapNotNull { entry ->
+                entry.imdbId?.takeIf { entry.lookupCompleted }?.let { entry.tmdbId to it }
+            }.toMap()
+        }.orEmpty()
         onProgress(0, tmdbIds.size)
         val completedCount = AtomicInteger(0)
         val entries = coroutineScope {
             tmdbIds.mapIndexed { index, tmdbId ->
                 async {
-                    val resolution = resolveImdbId(tmdbId)
+                    val resolution = knownIds[tmdbId]?.let { ShowIdResolution(it, true) }
+                        ?: resolveImdbId(tmdbId)
                     onProgress(completedCount.incrementAndGet(), tmdbIds.size)
                     TrendingShowsCacheEntry(
                         rank = index + 1,
@@ -104,7 +131,10 @@ class TrendingShowsRepository @Inject constructor(
 
         val payload = TrendingShowsCachePayload(
             fetchedAtEpochMs = System.currentTimeMillis(),
-            entries = entries
+            entries = entries,
+            resolvedImdbIds = knownIds + entries.mapNotNull { entry ->
+                entry.imdbId?.takeIf { entry.lookupCompleted }?.let { entry.tmdbId to it }
+            }.toMap()
         )
         writeCache(payload)
         return payload
@@ -264,7 +294,8 @@ class TrendingShowsRepository @Inject constructor(
 @Serializable
 private data class TrendingShowsCachePayload(
     @SerialName("fetched_at_epoch_ms") val fetchedAtEpochMs: Long,
-    @SerialName("entries") val entries: List<TrendingShowsCacheEntry>
+    @SerialName("entries") val entries: List<TrendingShowsCacheEntry>,
+    @SerialName("resolved_imdb_ids") val resolvedImdbIds: Map<Int, String> = emptyMap()
 )
 
 @Serializable

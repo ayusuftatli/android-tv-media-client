@@ -4,9 +4,12 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import tv.ororo.app.data.api.HttpStatusException
 import tv.ororo.app.data.auth.AuthEvent
@@ -17,7 +20,6 @@ import tv.ororo.app.data.repository.SavedContentRepository
 import tv.ororo.app.data.repository.SessionRepository
 import tv.ororo.app.data.repository.WatchProgressRepository
 import tv.ororo.app.data.repository.WatchState
-import javax.inject.Inject
 
 data class MovieDetailUiState(
     val movie: MovieDetail? = null,
@@ -40,11 +42,13 @@ class MovieDetailViewModel @Inject constructor(
     private val movieId: Int = savedStateHandle["movieId"] ?: 0
 
     private val _uiState = MutableStateFlow(MovieDetailUiState())
-    val uiState: StateFlow<MovieDetailUiState> = _uiState.asStateFlow()
+    val uiState: StateFlow<MovieDetailUiState> = combine(
+        _uiState, watchProgressRepository.watchStateFlow(WatchProgressRepository.contentKey("movie", movieId))
+    ) { state, watchState -> state.copy(watchState = watchState) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MovieDetailUiState())
 
     init {
         observeSavedState()
-        observeWatchState()
         loadMovie()
     }
 
@@ -52,15 +56,6 @@ class MovieDetailViewModel @Inject constructor(
         viewModelScope.launch {
             savedContentRepository.isSavedFlow(SavedContentRepository.TYPE_MOVIE, movieId).collect { isSaved ->
                 _uiState.value = _uiState.value.copy(isSaved = isSaved)
-            }
-        }
-    }
-
-    private fun observeWatchState() {
-        viewModelScope.launch {
-            watchProgressRepository.watchStatesFlow().collect { states ->
-                val contentKey = WatchProgressRepository.contentKey("movie", movieId)
-                _uiState.value = _uiState.value.copy(watchState = states[contentKey])
             }
         }
     }

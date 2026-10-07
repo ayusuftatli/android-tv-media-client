@@ -1,9 +1,11 @@
 package tv.ororo.app.ui.player
 
-import android.net.Uri
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 import android.content.res.ColorStateList
-import android.util.TypedValue
+import android.net.Uri
 import android.util.Log
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
@@ -11,6 +13,8 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import androidx.activity.compose.BackHandler
+import androidx.appcompat.widget.AppCompatButton
+import androidx.appcompat.widget.AppCompatImageButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,12 +25,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -37,14 +38,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.appcompat.widget.AppCompatButton
-import androidx.appcompat.widget.AppCompatImageButton
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
-import androidx.media3.common.Player
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
@@ -64,7 +64,7 @@ fun PlayerScreen(
     onNextEpisode: (Int) -> Unit,
     viewModel: PlayerViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val playerFocusRequester = remember { FocusRequester() }
 
@@ -349,8 +349,8 @@ fun PlayerScreen(
                                         exoPlayer = exoPlayer,
                                         playerView = view as PlayerView,
                                         onBack = onBack,
-                                        hasNextEpisode = hasNextEpisode,
-                                        onNextEpisode = nextEpisode?.let { { onNextEpisode(it.id) } },
+                                        hasNextEpisode = latestHasNextEpisode,
+                                        onNextEpisode = latestNextEpisode?.let { episode -> { latestOnNextEpisode(episode.id) } },
                                         onStopRequested = { showStopPlaybackDialog = true }
                                     )
                                     updateProgressBarSelectionState(view as PlayerView)
@@ -476,6 +476,7 @@ private fun logPlaybackState(player: Player, contentType: String, contentId: Int
     )
 }
 
+@androidx.annotation.OptIn(UnstableApi::class)
 private fun handlePlayerKeyDown(
     keyCode: Int,
     exoPlayer: ExoPlayer,
@@ -595,6 +596,7 @@ private fun isDescendantOrSame(view: View, potentialAncestor: View): Boolean {
     return false
 }
 
+@androidx.annotation.OptIn(UnstableApi::class)
 private fun updateProgressBarSelectionState(playerView: PlayerView) {
     val progressBar = playerView.findViewById<View>(androidx.media3.ui.R.id.exo_progress) ?: return
     val isSelected = isProgressBarFocused(playerView)
@@ -615,6 +617,7 @@ internal fun shouldHandleBackAsHideControls(isControllerVisible: Boolean): Boole
     return isControllerVisible
 }
 
+@androidx.annotation.OptIn(UnstableApi::class)
 internal fun inferSubtitleMimeType(url: String): String {
     val normalized = url.substringBefore('?').lowercase()
     return when {

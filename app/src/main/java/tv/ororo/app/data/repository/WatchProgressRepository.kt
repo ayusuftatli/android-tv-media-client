@@ -7,14 +7,22 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import javax.inject.Inject
-import javax.inject.Singleton
+import tv.ororo.app.di.ApplicationScope
+import tv.ororo.app.di.DefaultDispatcher
 
 private val Context.watchProgressDataStore: DataStore<Preferences> by preferencesDataStore(name = "watch_progress")
 
@@ -28,22 +36,48 @@ data class WatchState(
 )
 
 @Singleton
-class WatchProgressRepository @Inject constructor(
-    @ApplicationContext private val context: Context,
-    private val json: Json
+class WatchProgressRepository internal constructor(
+    private val dataStore: DataStore<Preferences>,
+    private val json: Json,
+    applicationScope: CoroutineScope,
+    defaultDispatcher: CoroutineDispatcher
 ) {
-    private val keyPrefix = "watch_state_"
+    @Inject
+    constructor(
+        @ApplicationContext context: Context,
+        json: Json,
+        @ApplicationScope applicationScope: CoroutineScope,
+        @DefaultDispatcher defaultDispatcher: CoroutineDispatcher
+    ) : this(context.watchProgressDataStore, json, applicationScope, defaultDispatcher)
 
-    fun watchStatesFlow(): Flow<Map<String, WatchState>> {
-        return context.watchProgressDataStore.data.map { prefs ->
-            prefs.asMap().mapNotNull { (key, value) ->
-                val prefKey = key.name
-                if (!prefKey.startsWith(keyPrefix)) return@mapNotNull null
-                val raw = value as? String ?: return@mapNotNull null
-                parseWatchState(raw)
-            }.associateBy { it.contentKey }
-        }
-    }
+    private val keyPrefix = "watch_state_"
+    private val defaultDispatcher = defaultDispatcher
+
+    private val watchStates = dataStore.data.map { prefs ->
+        prefs.asMap().mapNotNull { (key, value) ->
+            if (!key.name.startsWith(keyPrefix)) return@mapNotNull null
+            parseWatchState(value as? String ?: return@mapNotNull null)
+        }.associateBy { it.contentKey }
+    }.flowOn(defaultDispatcher)
+        .shareIn(applicationScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
+
+    private val watchedMovieIds = watchStates.map { states ->
+        states.values.asSequence()
+            .filter { it.completed && it.contentKey.startsWith("movie:") }
+            .mapNotNull { it.contentKey.substringAfter("movie:").toIntOrNull() }
+            .toSet()
+    }.distinctUntilChanged()
+        .flowOn(defaultDispatcher)
+        .shareIn(applicationScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
+
+    fun watchStatesFlow(): Flow<Map<String, WatchState>> = watchStates
+
+    fun watchedMovieIdsFlow(): Flow<Set<Int>> = watchedMovieIds
+
+    fun watchStateFlow(contentKey: String): Flow<WatchState?> =
+        dataStore.data.map { prefs ->
+            prefs[stringPreferencesKey(keyPrefix + contentKey)]?.let(::parseWatchState)
+        }.distinctUntilChanged().flowOn(defaultDispatcher)
 
     fun inProgressWatchStatesFlow(): Flow<List<WatchState>> {
         return watchStatesFlow().map { states ->
@@ -57,7 +91,7 @@ class WatchProgressRepository @Inject constructor(
 
     suspend fun getWatchState(contentKey: String): WatchState? {
         val key = stringPreferencesKey(keyPrefix + contentKey)
-        val raw = context.watchProgressDataStore.data.first()[key] ?: return null
+        val raw = dataStore.data.first()[key] ?: return null
         return parseWatchState(raw)
     }
 
@@ -78,19 +112,24 @@ class WatchProgressRepository @Inject constructor(
             updatedAt = System.currentTimeMillis()
         )
 
-        context.watchProgressDataStore.edit { prefs ->
-            prefs[stringPreferencesKey(keyPrefix + contentKey)] = json.encodeToString(watchState)
+        dataStore.edit { prefs ->
+            val key = stringPreferencesKey(keyPrefix + contentKey)
+            val previous = prefs[key]?.let(::parseWatchState)
+            if (previous?.positionMs == positionMs && previous.durationMs == durationMs &&
+                previous.completed == completed
+            ) return@edit
+            prefs[key] = json.encodeToString(watchState)
         }
     }
 
     suspend fun clearProgress(contentKey: String) {
-        context.watchProgressDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs.remove(stringPreferencesKey(keyPrefix + contentKey))
         }
     }
 
     suspend fun clearAllProgress() {
-        context.watchProgressDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             val keysToRemove = prefs.asMap().keys
                 .filter { key -> key.name.startsWith(keyPrefix) }
             keysToRemove.forEach { key -> prefs.remove(key) }

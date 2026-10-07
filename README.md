@@ -24,8 +24,10 @@ TMDB_READ_ACCESS_TOKEN=your_api_read_access_token
 
 For automated builds, set the `TMDB_READ_ACCESS_TOKEN` environment variable
 instead. The first visit to each section resolves its weekly top 100 to Ororo's
-IMDb IDs. Movie and TV results are cached separately for 24 hours and are cleared
-by the app's **Clear cache** action.
+IMDb IDs. Movie and TV rankings are cached separately for 24 hours. Successful TMDB-to-IMDb
+mappings are retained across ranking refreshes, so only new or unresolved titles
+need another lookup. Cached results remain visible while expired rankings refresh.
+The app's **Clear cache** action removes both rankings and ID mappings.
 
 TMDB attribution and its approved logo are available under **Settings → About &
 data attribution**. The logo asset is the unmodified TMDB primary logo published
@@ -47,6 +49,13 @@ on TMDB's official logos and attribution page.
    - `./gradlew :app:assembleDebug`
 4. APK output:
    - `app/build/outputs/apk/debug/app-debug.apk`
+
+For an optimized release build, run `./gradlew :app:assembleRelease`. Release builds
+use R8 code optimization and resource shrinking. The output at
+`app/build/outputs/apk/release/app-release-unsigned.apk` must be signed before installation.
+
+Run regression tests and Android lint with:
+`./gradlew :app:testDebugUnitTest :app:lintDebug`.
 
 ## Install on Android TV
 

@@ -25,6 +25,7 @@ data class TrendingShowsUiState(
     val isLoading: Boolean = false,
     val hasLoadedResults: Boolean = false,
     val isStale: Boolean = false,
+    val isShowingPartialResults: Boolean = false,
     val error: String? = null
 )
 
@@ -62,6 +63,16 @@ class TrendingShowsViewModel @Inject constructor(
                             )
                         }
                     },
+                    onPartialResult = { partial ->
+                        _uiState.update { state ->
+                            state.copy(
+                                shows = partial.shows,
+                                rankedShowCount = partial.rankedShowCount,
+                                hasLoadedResults = partial.shows.isNotEmpty(),
+                                isShowingPartialResults = true
+                            )
+                        }
+                    },
                     onProgress = { completed, total ->
                         _uiState.update { state ->
                             state.copy(
@@ -76,6 +87,7 @@ class TrendingShowsViewModel @Inject constructor(
                         shows = result.shows,
                         rankedShowCount = result.rankedShowCount,
                         isLoading = false,
+                        isShowingPartialResults = false,
                         hasLoadedResults = true,
                         isStale = result.isStale,
                         error = null
@@ -87,6 +99,7 @@ class TrendingShowsViewModel @Inject constructor(
                 _uiState.update { state ->
                     state.copy(
                         isLoading = false,
+                        isStale = state.hasLoadedResults,
                         error = error.toTrendingShowsUserMessage()
                     )
                 }

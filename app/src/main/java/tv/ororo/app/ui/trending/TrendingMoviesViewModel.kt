@@ -25,6 +25,7 @@ data class TrendingMoviesUiState(
     val isLoading: Boolean = false,
     val hasLoadedResults: Boolean = false,
     val isStale: Boolean = false,
+    val isShowingPartialResults: Boolean = false,
     val error: String? = null
 )
 
@@ -62,6 +63,16 @@ class TrendingMoviesViewModel @Inject constructor(
                             )
                         }
                     },
+                    onPartialResult = { partial ->
+                        _uiState.update { state ->
+                            state.copy(
+                                movies = partial.movies,
+                                rankedMovieCount = partial.rankedMovieCount,
+                                hasLoadedResults = partial.movies.isNotEmpty(),
+                                isShowingPartialResults = true
+                            )
+                        }
+                    },
                     onProgress = { completed, total ->
                         _uiState.update { state ->
                             state.copy(
@@ -76,6 +87,7 @@ class TrendingMoviesViewModel @Inject constructor(
                         movies = result.movies,
                         rankedMovieCount = result.rankedMovieCount,
                         isLoading = false,
+                        isShowingPartialResults = false,
                         hasLoadedResults = true,
                         isStale = result.isStale,
                         error = null
@@ -87,6 +99,7 @@ class TrendingMoviesViewModel @Inject constructor(
                 _uiState.update { state ->
                     state.copy(
                         isLoading = false,
+                        isStale = state.hasLoadedResults,
                         error = error.toUserMessage()
                     )
                 }

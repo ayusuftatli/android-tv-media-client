@@ -39,14 +39,13 @@ fun TrendingMoviesScreen(
     viewModel: TrendingMoviesViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val gridFocusRequester = remember { FocusRequester() }
+    val gridFocus = rememberTrendingGridFocus(uiState.movies.map { it.movie.id })
     val retryFocusRequester = remember { FocusRequester() }
 
-    LaunchedEffect(uiState.hasLoadedResults, uiState.movies.isNotEmpty(), uiState.error) {
+    LaunchedEffect(uiState.hasLoadedResults, uiState.error) {
         try {
             when {
                 uiState.error != null && !uiState.hasLoadedResults -> retryFocusRequester.requestFocus()
-                uiState.hasLoadedResults && uiState.movies.isNotEmpty() -> gridFocusRequester.requestFocus()
             }
         } catch (_: IllegalStateException) {
         }
@@ -87,7 +86,7 @@ fun TrendingMoviesScreen(
         }
 
         when {
-            uiState.isLoading && !uiState.hasLoadedResults -> {
+            uiState.isLoading && uiState.movies.isEmpty() -> {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -143,13 +142,14 @@ fun TrendingMoviesScreen(
             else -> {
                 TvLazyVerticalGrid(
                     columns = TvGridCells.Adaptive(170.dp),
+                    state = gridFocus.gridState,
                     contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.focusRequester(gridFocusRequester)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(uiState.movies, key = { it.movie.id }) { item ->
                         ContentCard(
+                            modifier = Modifier.trendingCardFocus(gridFocus, item.movie.id),
                             title = item.movie.name,
                             posterUrl = item.movie.posterUrl,
                             year = item.movie.year,
@@ -165,6 +165,8 @@ fun TrendingMoviesScreen(
 }
 
 private fun trendingSummary(state: TrendingMoviesUiState): String = when {
+    state.isLoading && state.isShowingPartialResults ->
+        "Loading more titles… ${state.completedLookups} of ${state.totalLookups} checked"
     state.isLoading && state.hasLoadedResults -> "Refreshing weekly chart…"
     state.isLoading && state.totalLookups == 0 -> "TMDB weekly top 100 • available on Ororo"
     state.isLoading -> "Checking which TMDB titles are available on Ororo"

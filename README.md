@@ -23,11 +23,32 @@ TMDB_READ_ACCESS_TOKEN=your_api_read_access_token
 ```
 
 For automated builds, set the `TMDB_READ_ACCESS_TOKEN` environment variable
-instead. The first visit to each section resolves its weekly top 100 to Ororo's
-IMDb IDs. Movie and TV rankings are cached separately for 24 hours. Successful TMDB-to-IMDb
-mappings are retained across ranking refreshes, so only new or unresolved titles
-need another lookup. Cached results remain visible while expired rankings refresh.
-The app's **Clear cache** action removes both rankings and ID mappings.
+instead. Trending Movies and Trending TV resolve TMDB's weekly top 100 to titles
+available on Ororo. On a first visit, matches appear progressively in ranking order.
+The catalog, ranking pages, and IMDb lookups overlap, with up to eight TMDB requests
+in flight across both screens and a shared ceiling of 38 request starts per second.
+A `429` response pauses new requests from both screens for the server's retry period.
+
+Rankings remain fresh for 24 hours; Ororo availability is rechecked after 15 minutes.
+Each completed list is cached in memory and on disk, including the title data needed
+to render cards immediately after an app restart. Expired lists stay visible during
+background refresh and update automatically when it completes. Refresh failures keep
+existing results visible with a cached-results notice. First-load partial results
+are never persisted as a fresh snapshot. Posters use the existing Coil image cache.
+
+Successful TMDB-to-IMDb mappings survive ranking refreshes, so only new or unresolved
+titles need another lookup. Older ranking-only caches are upgraded on the next
+successful load. Title snapshots are scoped to an opaque login identifier: logout
+invalidates them, and a subsequent login cannot reuse them. Public ID mappings remain
+reusable. **Clear cache** removes snapshots, rankings, and mappings and cancels pending
+trending loads so they cannot recreate cleared data. Overlapping callers share a load;
+cancelling one caller leaves the load running while another still needs it.
+
+The deterministic loading benchmark in `TrendingLoadingTest` uses 200 ms for every
+API response and 100 matching titles: first results arrive at approximately 504 ms,
+and completion takes 3,102 ms versus 6,078 ms for the previous sequential-page,
+four-concurrent-lookup pipeline. Both issue 105 TMDB requests. These timings exclude
+real network variability, device rendering, and poster downloads.
 
 TMDB attribution and its approved logo are available under **Settings → About &
 data attribution**. The logo asset is the unmodified TMDB primary logo published

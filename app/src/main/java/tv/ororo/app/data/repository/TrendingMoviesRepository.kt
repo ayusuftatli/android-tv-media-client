@@ -3,43 +3,34 @@ package tv.ororo.app.data.repository
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
-import java.io.IOException
-import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.serialization.json.Json
-import retrofit2.HttpException
 import tv.ororo.app.BuildConfig
 import tv.ororo.app.data.api.TmdbApi
 import tv.ororo.app.data.domain.model.Movie
 import tv.ororo.app.data.domain.model.TrendingMovie
 import tv.ororo.app.data.domain.model.TrendingMoviesResult
+import tv.ororo.app.di.ApplicationScope
 import tv.ororo.app.di.DefaultDispatcher
 
-class TmdbConfigurationException : IllegalStateException(
-    "TMDB_READ_ACCESS_TOKEN is not configured"
-)
+class TmdbConfigurationException : IllegalStateException("TMDB_READ_ACCESS_TOKEN is not configured")
 
 @Singleton
 class TrendingMoviesRepository internal constructor(
-    private val cacheFile: File,
-    private val ororoRepository: OroroRepository,
-    private val tmdbApi: TmdbApi,
-    private val json: Json,
-    private val tmdbRequestLimiter: TmdbRequestLimiter,
-    private val defaultDispatcher: CoroutineDispatcher,
-    private val isConfigured: () -> Boolean
+    cacheFile: File,
+    ororoRepository: OroroRepository,
+    tmdbApi: TmdbApi,
+    json: Json,
+    tmdbRequestLimiter: TmdbRequestLimiter,
+    defaultDispatcher: CoroutineDispatcher,
+    accountScope: suspend () -> String? = { "local" },
+    now: () -> Long = System::currentTimeMillis,
+    scope: CoroutineScope = CoroutineScope(SupervisorJob() + defaultDispatcher),
+    isConfigured: () -> Boolean
 ) {
     @Inject
     constructor(
@@ -48,249 +39,62 @@ class TrendingMoviesRepository internal constructor(
         tmdbApi: TmdbApi,
         json: Json,
         tmdbRequestLimiter: TmdbRequestLimiter,
-        @DefaultDispatcher defaultDispatcher: CoroutineDispatcher
+        @DefaultDispatcher defaultDispatcher: CoroutineDispatcher,
+        sessionRepository: SessionRepository,
+        @ApplicationScope scope: CoroutineScope
     ) : this(
-        File(context.cacheDir, CACHE_FILE_NAME), ororoRepository, tmdbApi, json,
-        tmdbRequestLimiter, defaultDispatcher, { BuildConfig.TMDB_READ_ACCESS_TOKEN.isNotBlank() }
+        File(context.cacheDir, "tmdb_weekly_trending_movies.json"),
+        ororoRepository, tmdbApi, json, tmdbRequestLimiter, defaultDispatcher,
+        sessionRepository::getCacheScope, scope = scope,
+        isConfigured = { BuildConfig.TMDB_READ_ACCESS_TOKEN.isNotBlank() }
     )
-    private val cacheMutex = Mutex()
+
+    private val loader = TrendingLoader(
+        cacheFile, json, TrendingMovie.serializer(), tmdbRequestLimiter, defaultDispatcher,
+        scope, accountScope, now, isConfigured,
+        catalog = { ororoRepository.getMovies() },
+        catalogFetchedAt = { ororoRepository.moviesFetchedAtMs ?: now() },
+        page = { number ->
+            val response = tmdbApi.getTrendingMovies("week", number)
+            TrendingPage(response.results.map { it.id }, response.totalPages)
+        },
+        imdbId = { id -> tmdbApi.getMovieDetails(id).imdbId },
+        prepareMatch = { titles: List<Movie> ->
+            // Build the catalog index once, then reuse it for every progressive update.
+            val byImdbId = titles.mapNotNull { title ->
+                normalizeImdbId(title.imdbId)?.let { it to title }
+            }.toMap()
+            val matchEntries: (List<TrendingEntry>) -> List<TrendingMovie> = { entries ->
+                entries.mapNotNull { entry ->
+                    byImdbId[normalizeImdbId(entry.imdbId)]?.let { TrendingMovie(entry.rank, it) }
+                }
+            }
+            matchEntries
+        }
+    )
 
     suspend fun getWeeklyTrendingMovies(
         forceRefresh: Boolean = false,
         onProgress: (completed: Int, total: Int) -> Unit = { _, _ -> },
-        onCachedResult: (TrendingMoviesResult) -> Unit = {}
-    ): TrendingMoviesResult = coroutineScope {
-        val cached = readCache()
-        val catalog = async { ororoRepository.getMovies() }
-        val isFresh = cached != null && isTrendingCacheFresh(cached.fetchedAtEpochMs, System.currentTimeMillis())
-        val cachedResult = if (cached != null) {
-            val titles = catalog.await()
-            withContext(defaultDispatcher) { cached.toResult(titles, isStale = !isFresh || forceRefresh) }
-        } else null
-        if (!forceRefresh && isFresh && cachedResult != null) {
-            onProgress(cached.entries.size, cached.entries.size)
-            return@coroutineScope cachedResult
-        }
-        cachedResult?.let(onCachedResult)
+        onCachedResult: (TrendingMoviesResult) -> Unit = {},
+        onPartialResult: (TrendingMoviesResult) -> Unit = {}
+    ): TrendingMoviesResult = loader.load(
+        forceRefresh, onProgress,
+        { onCachedResult(it.toResult()) },
+        { onPartialResult(it.toResult()) }
+    ).toResult()
 
-        try {
-            if (!isConfigured()) throw TmdbConfigurationException()
-            val refreshed = refreshCache(cached, onProgress)
-            val titles = catalog.await()
-            withContext(defaultDispatcher) { refreshed.toResult(titles, isStale = false) }
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            cachedResult ?: throw error
-        }
-    }
+    suspend fun clearCache() = loader.clear()
 
-    suspend fun clearCache() {
-        cacheMutex.lock()
-        try {
-            withContext(Dispatchers.IO) {
-                cacheFile.delete()
-            }
-        } finally {
-            cacheMutex.unlock()
-        }
-    }
-
-    private suspend fun refreshCache(
-        cached: TrendingCachePayload?,
-        onProgress: (completed: Int, total: Int) -> Unit
-    ): TrendingCachePayload {
-        val tmdbIds = loadTopTrendingMovieIds()
-        if (tmdbIds.isEmpty()) {
-            throw IOException("TMDB returned no trending movies")
-        }
-
-        // Rankings expire daily; successful TMDB-to-IMDb mappings survive ranking changes.
-        val knownIds = cached?.let { previous ->
-            previous.resolvedImdbIds + previous.entries.mapNotNull { entry ->
-                entry.imdbId?.takeIf { entry.lookupCompleted }?.let { entry.tmdbId to it }
-            }.toMap()
-        }.orEmpty()
-        onProgress(0, tmdbIds.size)
-        val completedCount = AtomicInteger(0)
-        val entries = coroutineScope {
-            tmdbIds.mapIndexed { index, tmdbId ->
-                async {
-                    val resolution = knownIds[tmdbId]?.let { MovieIdResolution(it, true) }
-                        ?: resolveImdbId(tmdbId)
-                    onProgress(completedCount.incrementAndGet(), tmdbIds.size)
-                    TrendingCacheEntry(
-                        rank = index + 1,
-                        tmdbId = tmdbId,
-                        imdbId = resolution.imdbId,
-                        lookupCompleted = resolution.completed
-                    )
-                }
-            }.awaitAll()
-        }
-
-        if (entries.none { it.lookupCompleted && it.imdbId != null }) {
-            throw IOException("TMDB movie matching failed")
-        }
-
-        val payload = TrendingCachePayload(
-            fetchedAtEpochMs = System.currentTimeMillis(),
-            entries = entries,
-            resolvedImdbIds = knownIds + entries.mapNotNull { entry ->
-                entry.imdbId?.takeIf { entry.lookupCompleted }?.let { entry.tmdbId to it }
-            }.toMap()
-        )
-        writeCache(payload)
-        return payload
-    }
-
-    private suspend fun loadTopTrendingMovieIds(): List<Int> {
-        val ids = linkedSetOf<Int>()
-        for (page in 1..TRENDING_PAGE_COUNT) {
-            val response = executeWithRetry {
-                tmdbApi.getTrendingMovies(
-                    timeWindow = TRENDING_TIME_WINDOW,
-                    page = page
-                )
-            }
-            response.results.forEach { result ->
-                if (ids.size < TRENDING_MOVIE_LIMIT) {
-                    ids += result.id
-                }
-            }
-            if (
-                ids.size >= TRENDING_MOVIE_LIMIT ||
-                response.results.isEmpty() ||
-                (response.totalPages > 0 && page >= response.totalPages)
-            ) {
-                break
-            }
-        }
-        return ids.take(TRENDING_MOVIE_LIMIT)
-    }
-
-    private suspend fun resolveImdbId(tmdbId: Int): MovieIdResolution {
-        return try {
-            val details = executeWithRetry { tmdbApi.getMovieDetails(tmdbId) }
-            MovieIdResolution(
-                imdbId = normalizeImdbId(details.imdbId),
-                completed = true
-            )
-        } catch (error: HttpException) {
-            when (error.code()) {
-                401, 403 -> throw error
-                404 -> MovieIdResolution(imdbId = null, completed = true)
-                else -> MovieIdResolution(imdbId = null, completed = false)
-            }
-        } catch (_: IOException) {
-            MovieIdResolution(imdbId = null, completed = false)
-        }
-    }
-
-    private suspend fun <T> executeWithRetry(block: suspend () -> T): T {
-        var lastError: Exception? = null
-        repeat(MAX_REQUEST_ATTEMPTS) { attempt ->
-            try {
-                return tmdbRequestLimiter.execute(block)
-            } catch (error: HttpException) {
-                if (error.code() == 401 || error.code() == 403 || error.code() == 404) {
-                    throw error
-                }
-                if (error.code() != 429 && error.code() < 500) {
-                    throw error
-                }
-                lastError = error
-                if (attempt < MAX_REQUEST_ATTEMPTS - 1) {
-                    delay(retryDelayMs(error, attempt))
-                }
-            } catch (error: IOException) {
-                lastError = error
-                if (attempt < MAX_REQUEST_ATTEMPTS - 1) {
-                    delay(DEFAULT_RETRY_DELAY_MS * (attempt + 1))
-                }
-            }
-        }
-        throw lastError ?: IOException("TMDB request failed")
-    }
-
-    private fun retryDelayMs(error: HttpException, attempt: Int): Long {
-        val retryAfterSeconds = error.response()
-            ?.headers()
-            ?.get("Retry-After")
-            ?.toLongOrNull()
-        return retryAfterSeconds?.times(1_000L)
-            ?: DEFAULT_RETRY_DELAY_MS * (attempt + 1)
-    }
-
-    private suspend fun readCache(): TrendingCachePayload? {
-        cacheMutex.lock()
-        return try {
-            withContext(Dispatchers.IO) {
-                if (!cacheFile.exists()) return@withContext null
-                runCatching {
-                    json.decodeFromString<TrendingCachePayload>(cacheFile.readText())
-                }.getOrNull()
-            }
-        } finally {
-            cacheMutex.unlock()
-        }
-    }
-
-    private suspend fun writeCache(payload: TrendingCachePayload) {
-        cacheMutex.lock()
-        try {
-            withContext(Dispatchers.IO) {
-                cacheFile.parentFile?.mkdirs()
-                val encoded = json.encodeToString(TrendingCachePayload.serializer(), payload)
-                val temporaryFile = File(cacheFile.parentFile, "$CACHE_FILE_NAME.tmp")
-                temporaryFile.writeText(encoded)
-                if (!temporaryFile.renameTo(cacheFile)) {
-                    cacheFile.writeText(encoded)
-                    temporaryFile.delete()
-                }
-            }
-        } finally {
-            cacheMutex.unlock()
-        }
-    }
-
-    private fun TrendingCachePayload.toResult(
-        ororoMovies: List<Movie>,
-        isStale: Boolean
-    ): TrendingMoviesResult {
-        val matchedMovies = matchTrendingMovies(
-            rankings = entries.map { entry ->
-                RankedImdbMovie(rank = entry.rank, imdbId = entry.imdbId)
-            },
-            ororoMovies = ororoMovies
-        )
-        return TrendingMoviesResult(
-            movies = matchedMovies,
-            rankedMovieCount = entries.size,
-            isStale = isStale
-        )
-    }
-
-    private data class MovieIdResolution(
-        val imdbId: String?,
-        val completed: Boolean
-    )
+    private fun TrendingResult<TrendingMovie>.toResult() =
+        TrendingMoviesResult(items, rankedCount, isStale)
 
     companion object {
-        private const val CACHE_FILE_NAME = "tmdb_weekly_trending_movies.json"
-        private const val TRENDING_TIME_WINDOW = "week"
-        private const val TRENDING_PAGE_COUNT = 5
-        private const val TRENDING_MOVIE_LIMIT = 100
-        private const val DEFAULT_RETRY_DELAY_MS = 1_000L
-        private const val MAX_REQUEST_ATTEMPTS = 3
-        private const val CACHE_TTL_MS = 24 * 60 * 60 * 1_000L
-
         private val imdbIdPattern = Regex("tt\\d+")
         private val numericIdPattern = Regex("\\d+")
 
         internal fun normalizeImdbId(value: String?): String? {
             val normalized = value?.trim()?.lowercase().orEmpty()
-            if (normalized.isEmpty()) return null
             return when {
                 normalized.matches(imdbIdPattern) -> normalized
                 normalized.matches(numericIdPattern) -> "tt$normalized"
@@ -298,27 +102,10 @@ class TrendingMoviesRepository internal constructor(
             }
         }
 
-        internal fun isTrendingCacheFresh(fetchedAtEpochMs: Long, nowEpochMs: Long): Boolean {
-            val ageMs = nowEpochMs - fetchedAtEpochMs
-            return ageMs in 0..CACHE_TTL_MS
-        }
+        internal fun isTrendingCacheFresh(fetchedAtEpochMs: Long, nowEpochMs: Long): Boolean =
+            TrendingLoader.fresh(fetchedAtEpochMs, nowEpochMs, TrendingLoader.RANKING_TTL)
     }
 }
-
-@Serializable
-private data class TrendingCachePayload(
-    @SerialName("fetched_at_epoch_ms") val fetchedAtEpochMs: Long,
-    @SerialName("entries") val entries: List<TrendingCacheEntry>,
-    @SerialName("resolved_imdb_ids") val resolvedImdbIds: Map<Int, String> = emptyMap()
-)
-
-@Serializable
-private data class TrendingCacheEntry(
-    @SerialName("rank") val rank: Int,
-    @SerialName("tmdb_id") val tmdbId: Int,
-    @SerialName("imdb_id") val imdbId: String? = null,
-    @SerialName("lookup_completed") val lookupCompleted: Boolean = true
-)
 
 internal data class RankedImdbMovie(
     val rank: Int,

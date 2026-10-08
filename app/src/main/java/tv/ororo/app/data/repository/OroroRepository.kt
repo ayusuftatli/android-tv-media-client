@@ -26,6 +26,9 @@ class OroroRepository @Inject constructor(
     private val cacheGeneration = AtomicLong()
     private val cacheLock = Any()
 
+    internal val moviesFetchedAtMs: Long? get() = moviesCache?.fetchedAtMs
+    internal val showsFetchedAtMs: Long? get() = showsCache?.fetchedAtMs
+
     suspend fun getMovies(forceRefresh: Boolean = false): List<Movie> = moviesMutex.withLock {
         val cached = moviesCache
         if (!forceRefresh && cached != null && isCacheFresh(cached.fetchedAtMs)) {

@@ -15,6 +15,7 @@ import tv.ororo.app.data.api.AuthInterceptor
 import tv.ororo.app.data.api.HttpStatusInterceptor
 import tv.ororo.app.data.api.OroroApi
 import tv.ororo.app.data.api.TmdbApi
+import tv.ororo.app.data.repository.TmdbRequestLimiter
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 
@@ -69,6 +70,10 @@ object AppModule {
     @Singleton
     fun provideTmdbApi(json: Json): TmdbApi {
         val client = OkHttpClient.Builder()
+            .dispatcher(okhttp3.Dispatcher().apply {
+                maxRequests = TmdbRequestLimiter.MAX_CONCURRENT_REQUESTS
+                maxRequestsPerHost = TmdbRequestLimiter.MAX_CONCURRENT_REQUESTS
+            })
             .addInterceptor { chain ->
                 val request = chain.request().newBuilder()
                     .addHeader("Accept", "application/json")

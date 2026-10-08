@@ -1,7 +1,9 @@
 package tv.ororo.app.data.domain.model
 
 import java.util.Locale
+import kotlinx.serialization.Serializable
 
+@Serializable
 data class Movie(
     val id: Int,
     val name: String,
@@ -30,6 +32,7 @@ data class MovieDetail(
     val subtitles: List<Subtitle>
 )
 
+@Serializable
 data class TrendingMovie(
     val rank: Int,
     val movie: Movie
@@ -41,6 +44,7 @@ data class TrendingMoviesResult(
     val isStale: Boolean
 )
 
+@Serializable
 data class TrendingShow(
     val rank: Int,
     val show: Show
@@ -52,6 +56,7 @@ data class TrendingShowsResult(
     val isStale: Boolean
 )
 
+@Serializable
 data class Show(
     val id: Int,
     val name: String,

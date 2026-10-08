@@ -3,6 +3,7 @@ package tv.ororo.app.ui.player
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import android.content.res.ColorStateList
+import android.graphics.Typeface
 import android.net.Uri
 import android.util.TypedValue
 import android.view.Gravity
@@ -49,6 +50,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.DefaultTimeBar
+import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
 import tv.ororo.app.R
@@ -278,6 +280,19 @@ fun PlayerScreen(
                                 }
 
                                 player = exoPlayer
+                                subtitleView?.apply {
+                                    setApplyEmbeddedStyles(false)
+                                    setStyle(
+                                        CaptionStyleCompat(
+                                            android.graphics.Color.WHITE,
+                                            android.graphics.Color.argb(166, 0, 0, 0),
+                                            android.graphics.Color.TRANSPARENT,
+                                            CaptionStyleCompat.EDGE_TYPE_NONE,
+                                            android.graphics.Color.TRANSPARENT,
+                                            Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                                        )
+                                    )
+                                }
                                 useController = true
                                 setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
                                 setShowSubtitleButton(true)

@@ -4,7 +4,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import android.content.res.ColorStateList
 import android.net.Uri
-import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
@@ -43,16 +42,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
-import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.DefaultTimeBar
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
-import tv.ororo.app.BuildConfig
 import tv.ororo.app.R
 
 @androidx.annotation.OptIn(UnstableApi::class)
@@ -96,7 +94,10 @@ fun PlayerScreen(
 
             uiState.streamUrl != null -> {
                 val exoPlayer = remember {
-                    ExoPlayer.Builder(context).build()
+                    ExoPlayer.Builder(
+                        context,
+                        DefaultRenderersFactory(context).setEnableDecoderFallback(true)
+                    ).build()
                 }
                 var playerViewRef by remember { mutableStateOf<PlayerView?>(null) }
                 var nextEpisodeButtonRef by remember { mutableStateOf<AppCompatButton?>(null) }
@@ -179,9 +180,6 @@ fun PlayerScreen(
                 LaunchedEffect(exoPlayer, uiState.streamUrl) {
                     while (true) {
                         delay(5_000)
-                        if (BuildConfig.DEBUG && exoPlayer.playWhenReady) {
-                            logPlaybackState(exoPlayer, latestContentType, latestContentId)
-                        }
                         if (!shouldPersistPlaybackProgress) continue
                         val durationMs = exoPlayer.duration
                         if (durationMs > 0L) {
@@ -199,12 +197,6 @@ fun PlayerScreen(
                 DisposableEffect(exoPlayer) {
                     val listener = object : Player.Listener {
                         override fun onTracksChanged(tracks: Tracks) {
-                            if (BuildConfig.DEBUG) for (group in tracks.groups) {
-                                for (i in 0 until group.length) {
-                                    val format = group.getTrackFormat(i)
-                                    Log.d("OroroPlayback", "track type=${group.type} selected=${group.isTrackSelected(i)} supported=${group.isTrackSupported(i)} mime=${format.sampleMimeType} codecs=${format.codecs} size=${format.width}x${format.height} channels=${format.channelCount} sampleRate=${format.sampleRate}")
-                                }
-                            }
                             val selectedLanguage = extractSelectedTextLanguage(tracks)
                             val subtitlesDisabled = exoPlayer.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)
                             val hasSelectableSubtitles = hasSelectableTextTracks(tracks)
@@ -221,9 +213,6 @@ fun PlayerScreen(
                         }
 
                         override fun onPlaybackStateChanged(playbackState: Int) {
-                            if (playbackState == Player.STATE_READY) {
-                                playerViewRef?.setCustomErrorMessage(null)
-                            }
                             if (playbackState == Player.STATE_ENDED && shouldPersistPlaybackProgress) {
                                 val durationMs = exoPlayer.duration
                                 if (durationMs > 0L) {
@@ -236,17 +225,6 @@ fun PlayerScreen(
                                     )
                                 }
                             }
-                        }
-
-                        override fun onEvents(player: Player, events: Player.Events) {
-                            if (BuildConfig.DEBUG) {
-                                logPlaybackState(player, latestContentType, latestContentId)
-                            }
-                        }
-
-                        override fun onPlayerError(error: PlaybackException) {
-                            Log.e("OroroPlayback", "Playback failed: ${error.errorCodeName}")
-                            playerViewRef?.setCustomErrorMessage("Playback failed (${error.errorCodeName}). Please reopen the video.")
                         }
                     }
 
@@ -301,6 +279,7 @@ fun PlayerScreen(
 
                                 player = exoPlayer
                                 useController = true
+                                setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
                                 setShowSubtitleButton(true)
                                 isFocusable = true
                                 isFocusableInTouchMode = true
@@ -425,6 +404,13 @@ fun PlayerScreen(
                             }
                     )
 
+                    PlaybackDiagnostics(
+                        player = exoPlayer,
+                        contentType = contentType,
+                        contentId = contentId,
+                        onExit = onBack
+                    )
+
                     if (showStopPlaybackDialog) {
                         AlertDialog(
                             onDismissRequest = { showStopPlaybackDialog = false },
@@ -455,25 +441,6 @@ fun PlayerScreen(
             }
         }
     }
-}
-
-private fun logPlaybackState(player: Player, contentType: String, contentId: Int) {
-    val state = when (player.playbackState) {
-        Player.STATE_IDLE -> "idle"
-        Player.STATE_BUFFERING -> "buffering"
-        Player.STATE_READY -> "ready"
-        Player.STATE_ENDED -> "ended"
-        else -> "unknown"
-    }
-    // Keep stream URLs and credentials out of diagnostics. The content ID identifies the
-    // episode even when navigating between titles while reproducing an intermittent stall.
-    Log.d(
-        "OroroPlayback",
-        "content=$contentType/$contentId state=$state playWhenReady=${player.playWhenReady} " +
-            "isPlaying=${player.isPlaying} suppression=${player.playbackSuppressionReason} " +
-            "position=${player.currentPosition} buffered=${player.bufferedPosition} " +
-            "error=${player.playerError?.errorCodeName}"
-    )
 }
 
 @androidx.annotation.OptIn(UnstableApi::class)

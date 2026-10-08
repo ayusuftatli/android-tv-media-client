@@ -78,6 +78,35 @@ use R8 code optimization and resource shrinking. The output at
 Run regression tests and Android lint with:
 `./gradlew :app:testDebugUnitTest :app:lintDebug`.
 
+## Playback troubleshooting
+
+Fatal playback errors appear in a dialog on the TV. The player also reports a
+position that has not advanced for 15 seconds while ready to play, or buffering
+that lasts 30 seconds. Pausing, seeking, and playback suppression reset these
+checks. A stall warning clears if playback advances again. A frozen picture with
+an advancing playback clock is not detected by this position check.
+
+**Retry playback** restarts the player at its current position, keeping the media
+item and track preferences. Decoder initialization failures can fall back to
+another decoder available on the device; this does not add support for missing
+codecs or automatically fix a decoder that initializes but then stalls.
+
+The dialog includes the content ID, device, audio/video formats, selected decoders,
+buffer state, and any reported error. These details help distinguish a stream or
+network problem from a device decoder/audio-output problem. Codec support depends
+on the Android device; the age of a title alone does not identify its encoding.
+
+Playback failures, stalls, selected tracks, decoder names, and recoverable
+decoder/audio-output errors are also logged in debug and release builds:
+
+```sh
+adb logcat -s OroroPlayback
+```
+
+Additional state-change logs are debug-only. App diagnostics omit stream URLs,
+credentials, and raw exception messages. When reporting an issue, include the
+dialog details and whether sound continues while the picture is frozen.
+
 ## Install on Android TV
 
 ### Option 1: Install with ADB (recommended)

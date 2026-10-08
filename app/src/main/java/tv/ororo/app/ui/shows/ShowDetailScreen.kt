@@ -2,6 +2,8 @@ package tv.ororo.app.ui.shows
 
 import androidx.compose.runtime.getValue
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -199,7 +201,13 @@ private fun ShowDetailContent(
 
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(bottom = 12.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+                    .horizontalScroll(rememberScrollState())
+                    .focusGroup()
+                    // Leave room for the focused tab's scale and border at the edges.
+                    .padding(4.dp)
             ) {
                 seasons.forEach { season ->
                     SeasonTab(
@@ -258,6 +266,7 @@ private fun SeasonTab(
             text = "S$season",
             color = OroroColors.TextPrimary,
             fontSize = 14.sp,
+            maxLines = 1,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         )
     }

@@ -2,6 +2,7 @@ package tv.ororo.app.data.repository
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -58,6 +60,8 @@ class WatchProgressRepository internal constructor(
             if (!key.name.startsWith(keyPrefix)) return@mapNotNull null
             parseWatchState(value as? String ?: return@mapNotNull null)
         }.associateBy { it.contentKey }
+    }.onStart {
+        dataStore.edit { pruneOlderProgress(it) }
     }.flowOn(defaultDispatcher)
         .shareIn(applicationScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
 
@@ -86,6 +90,7 @@ class WatchProgressRepository internal constructor(
                     !state.completed && state.positionMs > 0L && state.durationMs > 0L
                 }
                 .sortedByDescending { it.updatedAt }
+                .take(MAX_CONTINUE_WATCHING_ITEMS)
         }
     }
 
@@ -117,9 +122,27 @@ class WatchProgressRepository internal constructor(
             val previous = prefs[key]?.let(::parseWatchState)
             if (previous?.positionMs == positionMs && previous.durationMs == durationMs &&
                 previous.completed == completed
-            ) return@edit
+            ) {
+                pruneOlderProgress(prefs)
+                return@edit
+            }
             prefs[key] = json.encodeToString(watchState)
+            pruneOlderProgress(prefs, contentKey)
         }
+    }
+
+    private fun pruneOlderProgress(prefs: MutablePreferences, latestContentKey: String? = null) {
+        prefs.asMap().mapNotNull { (key, value) ->
+            if (!key.name.startsWith(keyPrefix)) return@mapNotNull null
+            val state = parseWatchState(value as? String ?: return@mapNotNull null)
+                ?: return@mapNotNull null
+            if (state.completed || state.positionMs <= 0L || state.durationMs <= 0L) return@mapNotNull null
+            key to state
+        }.sortedWith(
+            compareByDescending<Pair<Preferences.Key<*>, WatchState>> { it.second.updatedAt }
+                .thenByDescending { it.second.contentKey == latestContentKey }
+        ).drop(MAX_CONTINUE_WATCHING_ITEMS)
+            .forEach { (key, _) -> prefs.remove(key) }
     }
 
     suspend fun clearProgress(contentKey: String) {
@@ -137,6 +160,7 @@ class WatchProgressRepository internal constructor(
     }
 
     companion object {
+        const val MAX_CONTINUE_WATCHING_ITEMS = 5
         const val COMPLETION_THRESHOLD = 0.95
 
         fun contentKey(type: String, id: Int): String {

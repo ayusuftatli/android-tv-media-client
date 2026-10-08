@@ -109,7 +109,7 @@ class HomeViewModel @Inject constructor(
     private suspend fun buildContinueWatchingItems(
         inProgressStates: List<tv.ororo.app.data.repository.WatchState>
     ): List<ContinueWatchingItem> {
-        val visibleStates = inProgressStates.take(MAX_CONTINUE_WATCHING_ITEMS)
+        val visibleStates = inProgressStates.take(WatchProgressRepository.MAX_CONTINUE_WATCHING_ITEMS)
         coroutineScope {
             val movies = async {
                 if (visibleStates.none { it.contentKey.startsWith("movie:") }) return@async
@@ -208,9 +208,6 @@ class HomeViewModel @Inject constructor(
         return "$episodeLabel • $episodeName"
     }
 
-    companion object {
-        private const val MAX_CONTINUE_WATCHING_ITEMS = 20
-    }
 }
 
 internal fun calculateProgressPercent(positionMs: Long, durationMs: Long): Int {

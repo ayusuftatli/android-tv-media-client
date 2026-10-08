@@ -99,7 +99,7 @@ fun PlayerScreen(
                     ExoPlayer.Builder(
                         context,
                         DefaultRenderersFactory(context).setEnableDecoderFallback(true)
-                    ).build()
+                    ).setSeekForwardIncrementMs(5_000L).build()
                 }
                 var playerViewRef by remember { mutableStateOf<PlayerView?>(null) }
                 var nextEpisodeButtonRef by remember { mutableStateOf<AppCompatButton?>(null) }

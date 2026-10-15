@@ -92,9 +92,17 @@ another decoder available on the device; this does not add support for missing
 codecs or automatically fix a decoder that initializes but then stalls.
 
 The dialog includes the content ID, device, audio/video formats, selected decoders,
-buffer state, and any reported error. These details help distinguish a stream or
-network problem from a device decoder/audio-output problem. Codec support depends
-on the Android device; the age of a title alone does not identify its encoding.
+decoder buffer counts, buffer state, and any reported error. These details help
+distinguish a stream or network problem from a device decoder/audio-output problem.
+A decoder whose `in` count grows while `out` stays at 0 is discarding its input.
+Codec support depends on the Android device; the age of a title alone does not
+identify its encoding.
+
+Newer titles are served as HLS with extra "English Surround 5.1" audio tracks. These
+tracks are packaged incorrectly by the server: their 5.1 audio is paired with the
+stereo track's codec setup, so no frame decodes and playback stays buffering with
+a full buffer. The player therefore prefers stereo audio. Choosing a surround track
+from the player's audio menu will stall these titles.
 
 Playback failures, stalls, selected tracks, decoder names, and recoverable
 decoder/audio-output errors are also logged in debug and release builds:

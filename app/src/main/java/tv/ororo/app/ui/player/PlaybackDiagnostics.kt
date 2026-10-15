@@ -28,6 +28,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DecoderCounters
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import kotlinx.coroutines.delay
@@ -205,11 +206,20 @@ private class PlaybackDiagnosticDetails {
         } else {
             appendLine(tracks)
         }
-        appendLine("Video decoder: ${videoDecoder ?: "not reported"}")
-        appendLine("Audio decoder: ${audioDecoder ?: "not reported (may use passthrough)"}")
+        appendLine("Video decoder: ${videoDecoder ?: "not reported"}${describeDecoderCounters(player.videoDecoderCounters)}")
+        appendLine("Audio decoder: ${audioDecoder ?: "not reported (may use passthrough)"}${describeDecoderCounters(player.audioDecoderCounters)}")
         append(playbackStateSummary(player))
         rendererError?.let { append("\nLast renderer error: $it") }
     }
+}
+
+/** A decoder can consume input without output or an error, e.g. when the codec config is wrong. */
+@androidx.annotation.OptIn(UnstableApi::class)
+private fun describeDecoderCounters(counters: DecoderCounters?): String {
+    if (counters == null) return ""
+    counters.ensureUpdated()
+    return " (in=${counters.queuedInputBufferCount} out=${counters.renderedOutputBufferCount} " +
+        "skipped=${counters.skippedOutputBufferCount} dropped=${counters.droppedBufferCount})"
 }
 
 private fun describePlaybackFormat(format: Format?): String {

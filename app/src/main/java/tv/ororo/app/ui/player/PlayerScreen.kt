@@ -99,7 +99,9 @@ fun PlayerScreen(
                     ExoPlayer.Builder(
                         context,
                         DefaultRenderersFactory(context).setEnableDecoderFallback(true)
-                    ).setSeekForwardIncrementMs(5_000L).build()
+                    ).setSeekForwardIncrementMs(5_000L).build().apply {
+                        trackSelectionParameters = preferStereoAudio(trackSelectionParameters)
+                    }
                 }
                 var playerViewRef by remember { mutableStateOf<PlayerView?>(null) }
                 var nextEpisodeButtonRef by remember { mutableStateOf<AppCompatButton?>(null) }
@@ -607,6 +609,18 @@ internal fun inferSubtitleMimeType(url: String): String {
         normalized.endsWith(".vtt") -> MimeTypes.TEXT_VTT
         else -> MimeTypes.TEXT_UNKNOWN
     }
+}
+
+/**
+ * Newer Ororo HLS streams list "Surround 5.1" audio renditions whose segments contain 5.1 AAC but
+ * reuse the stereo rendition's init segment, so the decoder drops every frame and playback never
+ * leaves buffering. Their DEFAULT="YES" is quoted, which Media3 ignores, so it would otherwise
+ * prefer the higher channel count. A stream with only surround audio still plays it.
+ */
+internal fun preferStereoAudio(current: TrackSelectionParameters): TrackSelectionParameters {
+    return current.buildUpon()
+        .setMaxAudioChannelCount(2)
+        .build()
 }
 
 internal fun buildSubtitleTrackSelectionParameters(
